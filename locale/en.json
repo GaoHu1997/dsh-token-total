@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Token usage",
+    "description": "Token usage dashboard: quick ranges, six summary cards, activity heatmap, cache hit-rate trend with a per-model token chart, per-model / per-provider Top 5, plus per-session usage that counts subagents."
+  }
+}

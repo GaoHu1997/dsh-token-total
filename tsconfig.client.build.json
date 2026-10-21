@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.client.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationDir": "lib/types",
+    "rootDir": "src"
+  },
+  "include": ["src/client", "src/wire.ts", "src/shared.ts", "src/css-modules.d.ts"]
+}

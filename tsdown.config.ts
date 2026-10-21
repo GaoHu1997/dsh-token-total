@@ -1,0 +1,123 @@
+import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import { basename, dirname, join } from 'node:path'
+import { defineConfig, type Plugin } from 'tsdown'
+
+/**
+ * Plugin id stamped into the loader handoff and the injected style tags.
+ * Derived from package.json so the bundle's registration id always equals
+ * the installed package name — the web shell rejects a bundle whose
+ * `__ModuleLoader__.load` id differs from the loader entry's package.
+ */
+const PLUGIN_ID: string = createRequire(import.meta.url)('./package.json').name
+
+/**
+ * CSS Modules inlining: the web shell has no CSS pipeline, so every
+ * `*.module.css` import compiles to a `<style data-plugin-css>` tag injected
+ * once per document plus a default-exported class map.
+ */
+const CSS_VIRTUAL_PREFIX = '\0token-total-css:'
+const CSS_VIRTUAL_SUFFIX = '?inline'
+
+function cssModulesInline(pluginId: string): Plugin {
+  return {
+    name: 'dsh-css-modules-inline',
+    resolveId(source, importer) {
+      if (!source.endsWith('.module.css')) return null
+      const base = importer !== undefined ? join(dirname(importer), source) : source
+      return CSS_VIRTUAL_PREFIX + base + CSS_VIRTUAL_SUFFIX
+    },
+    async load(virtualId) {
+      if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX)) return null
+      const fileId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+      this.addWatchFile(fileId)
+      const source = await readFile(fileId, 'utf8')
+      // Minimal CSS Modules transform: hash the file, scope each `.class`.
+      const hash = String(Math.abs([...fileId].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) | 0, 7)))
+      const classMap: Record<string, string> = {}
+      const css = source.replace(/\.([A-Za-z_][\w-]*)/g, (match, local: string) => {
+        const scoped = `${local}_${hash}`
+        if (classMap[local] === undefined) classMap[local] = scoped
+        return `.${scoped}`
+      })
+      const tagId = `${pluginId}/${basename(fileId)}`
+      return [
+        `const css = ${JSON.stringify(css)};`,
+        `const tagId = ${JSON.stringify(tagId)};`,
+        'if (typeof document !== \'undefined\' && document.querySelector(\'style[data-plugin-css="\' + tagId + \'"]\') === null) {',
+        '  const tag = document.createElement(\'style\');',
+        `  tag.dataset.plugin = ${JSON.stringify(pluginId)};`,
+        '  tag.dataset.pluginCss = tagId;',
+        '  tag.textContent = css;',
+        '  document.head.appendChild(tag);',
+        '}',
+        `export default ${JSON.stringify(classMap)};`,
+      ].join('\n')
+    },
+  }
+}
+
+/**
+ * Browser platform words shared by the shell's frozen module table: these stay
+ * external so the factory's `require` resolves them from the table at runtime.
+ */
+const CLIENT_EXTERNALS: readonly string[] = [
+  'react',
+  'react/jsx-runtime',
+  'react-dom',
+  'react-dom/client',
+  '@deepseek-ai/cordis',
+  '@deepseek-ai/dsh-client-ui-slots',
+  '@deepseek-ai/dsh-client-ui-primitives',
+]
+
+/**
+ * Host-half externals: everything the DSH runtime itself provides. Bundling
+ * these would duplicate a singleton (storage domain registry, zod schemas)
+ * and break identity checks, so they resolve from the profile at load time.
+ */
+const HOST_EXTERNALS: readonly RegExp[] = [
+  /^node:/,
+  /^@deepseek-ai\//,
+  /^cordis/,
+  /^zod$/,
+]
+
+export default defineConfig([
+  {
+    name: `${PLUGIN_ID}/host`,
+    entry: { index: 'src/index.ts' },
+    // The host bundle lands beside the tsc declaration output in lib/; clean
+    // must stay off or tsdown would wipe it.
+    outDir: 'lib',
+    format: 'esm',
+    platform: 'node',
+    dts: false,
+    clean: false,
+    sourcemap: false,
+    deps: { neverBundle: HOST_EXTERNALS },
+    outputOptions: { entryFileNames: 'index.js' },
+  },
+  {
+    name: `${PLUGIN_ID}/client`,
+    entry: { client: 'src/client/index.tsx' },
+    outDir: 'lib',
+    entryFileNames: undefined,
+    format: 'cjs',
+    platform: 'browser',
+    dts: false,
+    clean: false,
+    sourcemap: true,
+    deps: {
+      neverBundle: CLIENT_EXTERNALS,
+      alwaysBundle: (id: string) => !CLIENT_EXTERNALS.includes(id),
+    },
+    plugins: [cssModulesInline(PLUGIN_ID)],
+    outputOptions: {
+      entryFileNames: 'client.js',
+      banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(PLUGIN_ID)}, factory: (require) => {`,
+      footer: 'return module.exports; } });',
+      intro: 'var module = { exports: {} }; var exports = module.exports;',
+    },
+  },
+])
