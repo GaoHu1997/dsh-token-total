@@ -45,10 +45,20 @@ export function providerOf(modelRef: string): string {
   return 'default'
 }
 
-/** The display name of a model ref: the part after the provider slash
- *  ("deepseek-chat" of "deepseek/deepseek-chat"); a bare name is unchanged. */
+/** The bare model id/name after a provider prefix. This does NOT resolve the
+ *  human-readable display name; the host model metadata does that. */
 export function modelNameOf(modelRef: string): string {
   const i = modelRef.indexOf('/')
   if (i > 0) return modelRef.slice(i + 1)
   return modelRef
+}
+
+/** Canonicalize a DISPLAY NAME, never a route id. Case and word separators
+ *  do not distinguish models, but versions, punctuation and suffixes do:
+ *  gpt-6.1-sol / GPT 6.1 sol -> gpt-6.1-sol, not gpt-6.1 or gpt-61-sol.
+ *  Do not strip a slash here: it may be part of the actual display name. */
+export function normalizeModelName(displayName: string): string {
+  return displayName.normalize('NFKC').trim().toLowerCase()
+    .replace(/[\s_\p{Dash_Punctuation}]+/gu, '-')
+    .replace(/^-+|-+$/g, '') || '(unknown)'
 }

@@ -16,7 +16,7 @@ import type { UsageHttpRequest, UsageHttpResponse } from './context-types.ts'
 export interface DailyTokenUsage {
   day: string // bucket key; "YYYY-MM-DD" or "YYYY-MM-DDTHH", local calendar
   total: number // provider-inclusive tokens (input+output+cache reads/writes)
-  byModel: Record<string, number> // model ref -> tokens
+  byModel: Record<string, number> // normalized display name -> tokens
   byProvider: Record<string, number> // provider name -> tokens
   requests: number // usage events (API calls)
   turns: number // completed turns
@@ -26,8 +26,12 @@ export interface DailyTokenUsage {
 
 /** One model's aggregate within the range. */
 export interface ModelTokenUsage {
+  /** Normalized human-readable model name, not a provider/model route id. */
   model: string
+  /** Single source provider, or empty when this model spans providers. */
   provider: string
+  /** All source providers; optional for compatibility with older responses. */
+  providers?: string[]
   tokens: number
   percent: number // 0..100
   /** Cached input tokens this model served (rate numerator). */

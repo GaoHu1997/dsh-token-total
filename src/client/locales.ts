@@ -22,10 +22,6 @@ export type TokenTotalKey =
   | 'from'
   | 'to'
   | 'refresh'
-  | 'rebuild'
-  | 'rebuildConfirm'
-  | 'rebuilding'
-  | 'rebuildHint'
   | 'loading'
   | 'tokens'
   | 'tokensHint'
@@ -49,8 +45,7 @@ export type TokenTotalKey =
   | 'dailyTrend'
   | 'hourlyTrend'
   | 'trendLimited'
-  | 'modelUsage'
-  | 'providerUsage'
+  | 'usageRanking'
   | 'byModel'
   | 'byProvider'
   | 'tokensColumn'
@@ -61,8 +56,6 @@ export type TokenTotalKey =
   | 'percent'
   | 'asOf'
   | 'empty'
-  | 'cachePrecision'
-  | 'cachePrecisionDesc'
   | 'tokenDetail'
   | 'tokenDetailDesc'
   | 'streamThroughput'
@@ -101,10 +94,6 @@ export const en: Record<TokenTotalKey, string> = {
   from: 'From',
   to: 'To',
   refresh: 'Refresh',
-  rebuild: 'Rebuild',
-  rebuildConfirm: 'Rebuild?',
-  rebuilding: 'Rebuilding',
-  rebuildHint: 'Rebuild the statistics from session logs: clear the local cache and replay every session. Use it when the figures look wrong.',
   loading: 'Loading',
   tokens: 'Token usage',
   tokensUnit: 'tokens',
@@ -128,8 +117,7 @@ export const en: Record<TokenTotalKey, string> = {
   dailyTrend: 'Daily token trend',
   hourlyTrend: 'Hourly token trend',
   trendLimited: 'Showing the latest {n} days',
-  modelUsage: 'Model usage',
-  providerUsage: 'Provider usage',
+  usageRanking: 'Usage ranking',
   byModel: 'By model',
   byProvider: 'By provider',
   tokensColumn: 'Tokens',
@@ -140,8 +128,6 @@ export const en: Record<TokenTotalKey, string> = {
   percent: 'Share',
   asOf: 'As of',
   empty: 'No usage data in this time range yet. Token usage is recorded from the day the panel is installed, including a one-time scan of your existing sessions.',
-  cachePrecision: 'Precise cache hit rate',
-  cachePrecisionDesc: 'Show the cache hit rate with two decimals in the conversation bottom bar.',
   tokenDetail: 'Conversation token breakdown',
   tokenDetailDesc: 'Show total, cache hit/miss and output tokens in the conversation bottom bar.',
   streamThroughput: 'Streaming throughput',
@@ -181,10 +167,6 @@ export const zh: Record<TokenTotalKey, string> = {
   from: '开始日期',
   to: '结束日期',
   refresh: '刷新',
-  rebuild: '重建统计',
-  rebuildConfirm: '确认重建？',
-  rebuilding: '重建中',
-  rebuildHint: '按会话日志重建统计：清空本地统计缓存并重放全部会话。数字异常时使用。',
   loading: '加载中',
   tokens: '总 Tokens',
   tokensUnit: 'tokens',
@@ -208,8 +190,7 @@ export const zh: Record<TokenTotalKey, string> = {
   dailyTrend: '按天 Token 趋势',
   hourlyTrend: '按小时 Token 趋势',
   trendLimited: '仅显示最近 {n} 天',
-  modelUsage: '模型用量',
-  providerUsage: '各供应商用量',
+  usageRanking: '用量排行',
   byModel: '按模型',
   byProvider: '按供应商',
   tokensColumn: '总 Tokens',
@@ -220,8 +201,6 @@ export const zh: Record<TokenTotalKey, string> = {
   percent: '占比',
   asOf: '统计截至',
   empty: '当前时间范围内暂无用量数据。Token 用量从本面板启用后开始累计，并会一次性回扫已有的历史会话。',
-  cachePrecision: '精确缓存命中率',
-  cachePrecisionDesc: '在会话底部信息栏以两位小数显示缓存命中率。',
   tokenDetail: '会话 Token 明细',
   tokenDetailDesc: '在会话底部信息栏显示总 Token、命中/未命中缓存与输出明细。',
   streamThroughput: '流式吞吐速度',
@@ -261,10 +240,6 @@ export const zhTW: Record<TokenTotalKey, string> = {
   from: '開始日期',
   to: '結束日期',
   refresh: '重新整理',
-  rebuild: '重建統計',
-  rebuildConfirm: '確認重建？',
-  rebuilding: '重建中',
-  rebuildHint: '依會話日誌重建統計：清空本機統計快取並重放全部會話。數字異常時使用。',
   loading: '載入中',
   tokens: '總 Tokens',
   tokensUnit: 'tokens',
@@ -288,8 +263,7 @@ export const zhTW: Record<TokenTotalKey, string> = {
   dailyTrend: '每日 Token 趨勢',
   hourlyTrend: '每小時 Token 趨勢',
   trendLimited: '僅顯示最近 {n} 天',
-  modelUsage: '模型用量',
-  providerUsage: '各供應商用量',
+  usageRanking: '用量排行',
   byModel: '按模型',
   byProvider: '按供應商',
   tokensColumn: '總 Tokens',
@@ -300,8 +274,6 @@ export const zhTW: Record<TokenTotalKey, string> = {
   percent: '佔比',
   asOf: '統計截至',
   empty: '目前時間範圍內尚無用量資料。Token 用量自本面板啟用後開始累計，並會一次掃描既有的歷史會話。',
-  cachePrecision: '精確快取命中率',
-  cachePrecisionDesc: '在會話底部資訊欄以兩位小數顯示快取命中率。',
   tokenDetail: '會話 Token 明細',
   tokenDetailDesc: '在會話底部資訊欄顯示總 Token、命中/未命中快取與輸出明細。',
   streamThroughput: '串流吞吐速度',

@@ -23,12 +23,11 @@
  * Which pair to register is read from the dock's entry ledger in
  * src/client/index.tsx.
  *
- * Two plugin-side readouts ride the same pills: with precise cache hit rate
- * on, the hit figure renders two decimals; with the session token breakdown
- * on, the usage dialog gains the cache-miss row. Both toggles live in
- * stats-line-state.ts (shared with the usage panel) and apply instantly.
+ * The cache-hit rate always uses the precise readout. The optional session
+ * token breakdown adds a cache-miss row to the usage dialog; its preference
+ * lives in stats-line-state.ts (shared with the usage panel) and applies instantly.
  *
- * The third toggle, streaming throughput, replaces the gauge pill's speed
+ * The other toggle, streaming throughput, replaces the gauge pill's speed
  * figure with a live estimate while a step is still streaming and drops back to
  * the official session figure the moment it settles. That subscription lives in
  * its own child component so stream deltas never re-render the pills. The live
@@ -51,7 +50,7 @@ import { LOCALE_NS } from './locales.ts'
 import { statsLineState } from './stats-line-state.ts'
 import { MEASURE_STYLE, useStatDialog, type StatDialogSeat } from './stat-dialog.ts'
 import {
-  billedInputTokens, cacheHitPercent, cacheHitPercentPrecise, deriveStats,
+  billedInputTokens, cacheHitPercentPrecise, deriveStats,
   estimateOutputTokens, formatDuration, formatTokensCompact, formatTokensPerSecond,
   measuredTokenScale, StreamingRateSampler, tokenBreakdown,
   type ConversationNodeLike, type PartialAssistantLike, type UseProjection, type WindowStats,
@@ -369,7 +368,7 @@ function TimePill({ stats, t, dialog, useChat, scale, liveSpeed, dock }: {
   )
 }
 
-function UsagePill({ usage, tree, t, dialog, cachePrecision, tokenDetail, dock }: {
+function UsagePill({ usage, tree, t, dialog, tokenDetail, dock }: {
   usage: Parameters<typeof billedInputTokens>[0]
   /** The whole session tree (main + subagents) from the host, when it has
    *  answered. Subagent spend is invisible to the native projection, so the
@@ -378,7 +377,6 @@ function UsagePill({ usage, tree, t, dialog, cachePrecision, tokenDetail, dock }
   t: T
   /** The row's shared exclusive slot; omitted by a split-mode entry. */
   dialog?: PillDialog
-  cachePrecision: boolean
   tokenDetail: boolean
   /** Whether the host's own dock row owns the layout (DSH >= 0.2.1-alpha.1). */
   dock: boolean
@@ -401,7 +399,7 @@ function UsagePill({ usage, tree, t, dialog, cachePrecision, tokenDetail, dock }
   // Same aggregate as the official pill total: every prompt-side billing bucket plus output.
   const total = billedTotal(billed)
   const totalText = t('message.turnUsage.count', { count: formatTokensCompact(total) })
-  const cacheHit = cachePrecision ? cacheHitPercentPrecise(billed) : cacheHitPercent(billed)
+  const cacheHit = cacheHitPercentPrecise(billed)
   const cacheHitText = cacheHit !== null ? t('stats.cacheHit', { percent: cacheHit }) : null
   const exactCount = (value: number): string =>
     t('message.turnUsage.count', { count: formatTokens(value) })
@@ -516,11 +514,9 @@ export const StatsLineEnhanced = memo(function StatsLineEnhanced(
   const stats = useMemo(() => projected ?? deriveStats(settledNodes ?? []), [projected, settledNodes])
   // Toggles live in the same client bundle as the usage panel; subscribe so
   // a flip in the panel updates the bottom bar immediately.
-  const [cachePrecision, setCachePrecision] = useState(statsLineState.cachePrecision)
   const [tokenDetail, setTokenDetail] = useState(statsLineState.tokenDetail)
   const [streamThroughput, setStreamThroughput] = useState(statsLineState.streamThroughput)
   useEffect(() => statsLineState.subscribe(() => {
-    setCachePrecision(statsLineState.cachePrecision)
     setTokenDetail(statsLineState.tokenDetail)
     setStreamThroughput(statsLineState.streamThroughput)
   }), [])
@@ -567,7 +563,6 @@ export const StatsLineEnhanced = memo(function StatsLineEnhanced(
             open: openPill === 'usage',
             setOpen: (open) => { setOpenPill(open ? 'usage' : null) },
           }}
-          cachePrecision={cachePrecision}
           tokenDetail={tokenDetail}
           dock={false}
         />
@@ -614,10 +609,8 @@ export const StatsUsageEntry = memo(function StatsUsageEntry(
   { useProjection, t, sessionId }: StatsLineEnhancedProps,
 ) {
   const usage = useProjection('tokenUsage')
-  const [cachePrecision, setCachePrecision] = useState(statsLineState.cachePrecision)
   const [tokenDetail, setTokenDetail] = useState(statsLineState.tokenDetail)
   useEffect(() => statsLineState.subscribe(() => {
-    setCachePrecision(statsLineState.cachePrecision)
     setTokenDetail(statsLineState.tokenDetail)
   }), [])
   const tree = useSessionUsage(sessionId, usageSignature(usage, usage === undefined ? 0 : 1))
@@ -629,7 +622,6 @@ export const StatsUsageEntry = memo(function StatsUsageEntry(
       usage={usage}
       tree={tree}
       t={t}
-      cachePrecision={cachePrecision}
       tokenDetail={tokenDetail}
       dock
     />

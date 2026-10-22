@@ -70,6 +70,7 @@
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\" && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.build.json && tsdown",
     "typecheck:client": "tsc -p tsconfig.client.json",
+    "test": "node --experimental-transform-types --test tests/*.test.mjs",
     "prepublishOnly": "pnpm build",
     "typecheck": "tsc --noEmit",
     "bundle": "tsdown",

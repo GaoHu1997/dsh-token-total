@@ -24,7 +24,7 @@ import type {
 // Pure date/model-ref helpers live in the shared (host+client, zero-dep)
 // module; imported for local use AND re-exported so the host-side import
 // surface is unchanged.
-import { dayKey, daysInRange, hourKey, providerOf } from './shared.ts'
+import { dayKey, daysInRange, hourKey, modelNameOf, normalizeModelName, providerOf } from './shared.ts'
 export { dayKey, daysInRange, hourKey, providerOf }
 
 /**
@@ -42,7 +42,9 @@ export interface UsageSample {
   /** Local calendar-hour key ("YYYY-MM-DDTHH"). Live and backfill samples
    *  always carry it; the aggregate's day-mode series ignores it. */
   hour?: string
-  model?: string // canonical "provider/model"
+  model?: string // canonical "provider/model" route, retained for provider attribution
+  /** Resolved human-readable name; old/unregistered routes fall back to the bare ref. */
+  modelName?: string
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
@@ -114,6 +116,7 @@ export function aggregateSamples(
     providers: [],
   }
   const modelTotals = new Map<string, number>()
+  const modelProviders = new Map<string, Set<string>>()
   const providerTotals = new Map<string, number>()
   // Per-dimension cache accumulators: the ranked lists report a cache hit rate
   // per model / per provider (requirement 下部), so the hit/miss pair must be
@@ -125,6 +128,7 @@ export function aggregateSamples(
   // reads the bucket's byModel / byProvider, so every token-bearing sample
   // must land in its bucket's map — not just in the range totals.
   const bucketByModel = new Map<string, Map<string, number>>()
+  const bucketByProvider = new Map<string, Map<string, number>>()
   const bucketTotals = new Map<string, number>()
   const bucketRequests = new Map<string, number>()
   const bucketTurns = new Map<string, number>()
@@ -166,8 +170,12 @@ export function aggregateSamples(
     // same ratio on both surfaces; for DeepSeek cacheWrite is always 0.) */
     const missSide = sample.inputTokens + sample.cacheWriteTokens
     out.cacheMiss += missSide
-    const model = sample.model && sample.model !== '' ? sample.model : '(unknown)'
-    const provider = providerOf(model)
+    const modelRef = sample.model && sample.model !== '' ? sample.model : '(unknown)'
+    const provider = providerOf(modelRef)
+    const model = normalizeModelName(sample.modelName?.trim() || modelNameOf(modelRef))
+    const sources = modelProviders.get(model) ?? new Set<string>()
+    sources.add(provider)
+    modelProviders.set(model, sources)
     modelTotals.set(model, (modelTotals.get(model) ?? 0) + total)
     providerTotals.set(provider, (providerTotals.get(provider) ?? 0) + total)
     const mc = modelCache.get(model) ?? { hit: 0, miss: 0 }
@@ -188,6 +196,12 @@ export function aggregateSamples(
       bucketByModel.set(bucket, byModel)
     }
     byModel.set(model, (byModel.get(model) ?? 0) + total)
+    let byProvider = bucketByProvider.get(bucket)
+    if (!byProvider) {
+      byProvider = new Map()
+      bucketByProvider.set(bucket, byProvider)
+    }
+    byProvider.set(provider, (byProvider.get(provider) ?? 0) + total)
     bucketTotals.set(bucket, (bucketTotals.get(bucket) ?? 0) + total)
     bucketCacheHit.set(bucket, (bucketCacheHit.get(bucket) ?? 0) + sample.cacheReadTokens)
     bucketCacheMiss.set(bucket, (bucketCacheMiss.get(bucket) ?? 0) + sample.inputTokens + sample.cacheWriteTokens)
@@ -198,15 +212,10 @@ export function aggregateSamples(
   // Bucket series: emit every bucket of the range; inactive buckets carry
   // zero totals.
   for (const bucket of buckets) {
-    const byModel = bucketByModel.get(bucket)
-    const byModelObj: Record<string, number> = {}
-    if (byModel) {
-      for (const [m, v] of byModel) byModelObj[m] = v
-    }
-    const byProviderObj: Record<string, number> = {}
-    for (const m of Object.keys(byModelObj)) {
-      byProviderObj[providerOf(m)] = (byProviderObj[providerOf(m)] ?? 0) + byModelObj[m]!
-    }
+    const byModelObj = Object.fromEntries(bucketByModel.get(bucket) ?? [])
+    // A merged display name may span providers: never infer its provider
+    // from the name (which no longer contains a routing prefix).
+    const byProviderObj = Object.fromEntries(bucketByProvider.get(bucket) ?? [])
     out.daily.push({
       day: bucket,
       total: bucketTotals.get(bucket) ?? 0,
@@ -219,13 +228,10 @@ export function aggregateSamples(
     })
   }
 
-  out.models = modelsSorted(modelTotals, modelCache)
+  out.models = modelsSorted(modelTotals, modelCache, modelProviders)
   out.providers = providersSorted(providerTotals, providerCache)
-  const top = out.models[0]
-  if (top) {
-    out.topModel = top.model
-    out.topProvider = top.provider
-  }
+  out.topModel = out.models[0]?.model ?? ''
+  out.topProvider = out.providers[0]?.provider ?? ''
   if (out.tokens > 0) {
     for (const m of out.models) m.percent = (m.tokens / out.tokens) * 100
     for (const p of out.providers) p.percent = (p.tokens / out.tokens) * 100
@@ -233,13 +239,18 @@ export function aggregateSamples(
   return out
 }
 
-function modelsSorted(totals: Map<string, number>, cache: Map<string, { hit: number; miss: number }>): ModelTokenUsage[] {
+function modelsSorted(
+  totals: Map<string, number>,
+  cache: Map<string, { hit: number; miss: number }>,
+  sources: Map<string, Set<string>>,
+): ModelTokenUsage[] {
   const out: ModelTokenUsage[] = []
   for (const [model, tokens] of totals) {
     const c = cache.get(model)
-    out.push({ model, provider: providerOf(model), tokens, percent: 0, cacheHit: c?.hit ?? 0, cacheMiss: c?.miss ?? 0 })
+    const providers = [...(sources.get(model) ?? [])].sort()
+    out.push({ model, provider: providers.length === 1 ? providers[0]! : '', providers, tokens, percent: 0, cacheHit: c?.hit ?? 0, cacheMiss: c?.miss ?? 0 })
   }
-  out.sort((a, b) => b.tokens - a.tokens)
+  out.sort((a, b) => b.tokens - a.tokens || a.model.localeCompare(b.model))
   return out
 }
 

@@ -2,15 +2,14 @@
  * Client preferences for the conversation bottom-bar (stats line) enhancements,
  * persisted in localStorage as one JSON blob.
  *
- * Three toggles share one blob so a single read covers all of them:
- * - `cachePrecision`: render the cache-hit rate with two decimals (e.g.
- *   "85.25%") instead of the default integer percentage;
+ * Two toggles share one blob so a single read covers both:
  * - `tokenDetail`: add the input (cache miss) row to the usage dialog's
  *   input / cache-read / cache-write / output breakdown;
  * - `streamThroughput`: while a step streams, replace the pill's speed figure
  *   with the live estimate and fall back to the official session figure the
  *   moment it settles.
  *
+ * Cache-hit precision is always enabled and has no stored preference.
  * The panel row and the stats line live in two different slot trees but inside
  * the SAME client bundle instance, so a tiny module store keeps them in sync
  * without touching the host or any settings store. Reads are defensive
@@ -21,12 +20,11 @@
 const STORAGE_KEY = 'dsh-token-total:stats-line'
 
 export interface StatsLinePrefs {
-  cachePrecision: boolean
   tokenDetail: boolean
   streamThroughput: boolean
 }
 
-const DEFAULTS: StatsLinePrefs = { cachePrecision: false, tokenDetail: false, streamThroughput: false }
+const DEFAULTS: StatsLinePrefs = { tokenDetail: false, streamThroughput: false }
 
 function readStored(): StatsLinePrefs {
   try {
@@ -34,7 +32,6 @@ function readStored(): StatsLinePrefs {
     if (raw === null) return { ...DEFAULTS }
     const parsed = JSON.parse(raw) as Partial<StatsLinePrefs>
     return {
-      cachePrecision: parsed.cachePrecision === true,
       tokenDetail: parsed.tokenDetail === true,
       streamThroughput: parsed.streamThroughput === true,
     }
@@ -60,20 +57,11 @@ function persist(next: StatsLinePrefs): void {
 }
 
 export const statsLineState = {
-  get cachePrecision(): boolean {
-    return prefs.cachePrecision
-  },
   get tokenDetail(): boolean {
     return prefs.tokenDetail
   },
   get streamThroughput(): boolean {
     return prefs.streamThroughput
-  },
-  setCachePrecision(next: boolean): void {
-    if (next === prefs.cachePrecision) return
-    prefs = { ...prefs, cachePrecision: next }
-    persist(prefs)
-    notify()
   },
   setTokenDetail(next: boolean): void {
     if (next === prefs.tokenDetail) return
@@ -99,8 +87,7 @@ export const statsLineState = {
 // writes, so this listener re-reads and notifies; same-instance writes never
 // fire it (no double notify).
 function samePrefs(left: StatsLinePrefs, right: StatsLinePrefs): boolean {
-  return left.cachePrecision === right.cachePrecision
-    && left.tokenDetail === right.tokenDetail
+  return left.tokenDetail === right.tokenDetail
     && left.streamThroughput === right.streamThroughput
 }
 

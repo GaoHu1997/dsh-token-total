@@ -23,10 +23,10 @@ import clsx from 'clsx'
 import { Activity, ArrowDownToLine, ArrowUpFromLine, ChevronDown, ChevronRight, Coins, Database, MessagesSquare } from 'lucide-react'
 import { Button, Input, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DailyTokenUsage, ModelTokenUsage, ProviderTokenUsage, TokenTotalRange, TokenTotalRequest } from '../wire.ts'
-import { fetchRange, rebuildStats, UsageApiError } from './api.ts'
+import { fetchRange, UsageApiError } from './api.ts'
 import { ChartTip } from './ChartTip.tsx'
 import { Donut, useDonutSize, type DonutSegment } from './Donut.tsx'
-import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, bucketAxisLabel, bucketTitle, providerOf, modelNameOf, smoothPath, niceTicks } from './format.ts'
+import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, bucketAxisLabel, bucketTitle, smoothPath, niceTicks } from './format.ts'
 import type { TokenTotalKey } from './locales.ts'
 import type { TokenTotalTranslator } from './index.tsx'
 import { statsLineState } from './stats-line-state.ts'
@@ -35,9 +35,6 @@ import css from './TokenTotalPanel.module.css'
 type Translator = TokenTotalTranslator
 
 const RANGE_PRESETS = ['today', '3', '7', '30', '90'] as const
-
-/** How long the rebuild button stays armed without a second press. */
-const REBUILD_ARM_MS = 5000
 
 // The heatmap's DATA WINDOW: one year, fixed regardless of the range preset.
 // It is the window, not the number of weeks drawn —the render trims columns
@@ -56,13 +53,6 @@ const TOP_MODELS = 10
 const OTHER_MODEL = '\u0000other' // sentinel; cannot collide with a real model ref
 const OTHER_COLOR = 'var(--dsw-chart-other)'
 
-/** The top-5 providers keep a distinct rank colour from the provider series;
- *  everything beyond collapses into the gray "Other" step, mirroring the
- *  model chart's shape at the provider dimension. */
-const TOP_PROVIDERS = 5
-const OTHER_PROVIDER = '\u0000pother' // sentinel; cannot collide with a real provider name
-const OTHER_PROVIDER_COLOR = 'var(--dsw-provider-other)'
-
 /** How many rows each bottom breakdown tab lists (requirement 下部: 展示前 5). */
 const TOP_BREAKDOWN = 5
 
@@ -73,31 +63,14 @@ const NO_KEYS: ReadonlySet<string> = new Set()
  *  into the OTHER_MODEL bucket with the breakdown kept for tooltips. */
 type GroupedDaily = DailyTokenUsage & { otherByModel: Record<string, number> }
 type GroupedModel = ModelTokenUsage & { items?: ModelTokenUsage[] }
-/** A provider folded into the aggregated Other bucket, carrying the models it
- *  served so its own row can open that breakdown. */
-type FoldedProvider = ProviderTokenUsage & { models: ModelTokenUsage[] }
-/** One provider row: its own volume plus every model it served, so the hover
- *  tip and the expandable detail list show the breakdown behind the number.
- *  The Other row additionally carries the providers it folded, so opening it
- *  lists PROVIDERS —their models sit one level further down, behind each of
- *  those rows, not flattened into this one. */
-type GroupedProvider = ProviderTokenUsage & {
-  models: ModelTokenUsage[]
-  /** Folded providers behind the Other bucket; absent on a ranked row. */
-  folded?: FoldedProvider[]
-}
 
 export function TokenTotalPanel({ t }: { t: Translator }): JSX.Element {
-  const [range, setRange] = useState<string>('30')
+  // The panel opens on TODAY: the common question is "what did I just
+  // spend", and it is the only preset that reads as a live figure rather
+  // than a running total. The other presets are one click away.
+  const [range, setRange] = useState<string>('today')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
-  // The rebuild action is destructive (it clears the store and replays the
-  // logs), so it takes two presses: the first arms the button, the second
-  // runs. Arming cancels itself on blur, on Escape, and on a short timer, so
-  // a primed destructive control can never be left behind on the toolbar.
-  const [rebuildArmed, setRebuildArmed] = useState(false)
-  const [rebuilding, setRebuilding] = useState(false)
-  const rebuildTimer = useRef<number | null>(null)
   const [stats, setStats] = useState<TokenTotalRange | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -161,44 +134,6 @@ export function TokenTotalPanel({ t }: { t: Translator }): JSX.Element {
     void load()
   }, [load])
 
-  // The armed rebuild (see the state note above): arm on the first press,
-  // run on the second, and disarm from blur, Escape, the timer, or unmount.
-  const disarmRebuild = useCallback(() => {
-    if (rebuildTimer.current !== null) {
-      window.clearTimeout(rebuildTimer.current)
-      rebuildTimer.current = null
-    }
-    setRebuildArmed(false)
-  }, [])
-
-  const armRebuild = useCallback(() => {
-    disarmRebuild()
-    setRebuildArmed(true)
-    rebuildTimer.current = window.setTimeout(() => {
-      rebuildTimer.current = null
-      setRebuildArmed(false)
-    }, REBUILD_ARM_MS)
-  }, [disarmRebuild])
-
-  const runRebuild = useCallback(async () => {
-    disarmRebuild()
-    setRebuilding(true)
-    setError('')
-    try {
-      await rebuildStats()
-      // The host wiped the rows and replayed the logs, so both surfaces the
-      // panel draws have to be read again —`load` re-reads the range
-      // aggregate and the heatmap window that rides on it.
-      await load()
-    } catch (e) {
-      setError(e instanceof UsageApiError ? e.message : String(e))
-    } finally {
-      setRebuilding(false)
-    }
-  }, [disarmRebuild, load])
-
-  useEffect(() => disarmRebuild, [disarmRebuild])
-
   // A model's colour is its TOKEN rank (the host returns `models` sorted by
   // token volume), matching reasonix: rank 1..10 take --dsw-chart-1..10 and the
   // aggregated tail is the gray --dsw-chart-other. First-seen order would
@@ -248,62 +183,8 @@ export function TokenTotalPanel({ t }: { t: Translator }): JSX.Element {
     return { models, daily }
   }, [stats])
 
-  // Provider colours are the provider's own rank —a palette separate from the
-  // model series, so a provider never wears a model's hue.
-  const providerRank = useMemo(
-    () => (stats?.providers ?? []).filter((p) => p.tokens > 0).slice(0, TOP_PROVIDERS).map((p) => p.provider),
-    [stats],
-  )
-  const colorForProvider = useCallback((provider: string): string => {
-    if (provider === OTHER_PROVIDER) return OTHER_PROVIDER_COLOR
-    const slot = providerRank.indexOf(provider)
-    return `var(--dsw-provider-${Math.min(slot < 0 ? 0 : slot, TOP_PROVIDERS - 1) + 1})`
-  }, [providerRank])
-
-  // Top-5 providers by token volume with the tail aggregated into one gray
-  // bucket. Providers carrying no tokens in the range are dropped: a
-  // request-only provider (calls that produced nothing) has no usage to rank.
-  const groupedProviders = useMemo<GroupedProvider[] | null>(() => {
-    if (!stats) return null
-    const modelsOf = new Map<string, ModelTokenUsage[]>()
-    for (const m of stats.models) {
-      const list = modelsOf.get(m.provider)
-      if (list === undefined) modelsOf.set(m.provider, [m])
-      else list.push(m)
-    }
-    const ranked = stats.providers.filter((p) => p.tokens > 0)
-    const top = ranked.slice(0, TOP_PROVIDERS)
-    // The tail keeps its own rows (each with the models it served) instead of
-    // being flattened into one model list: the Other bucket stands for
-    // PROVIDERS, and expanding it must answer "which providers, and how much
-    // each" before "which models".
-    const folded: FoldedProvider[] = ranked
-      .slice(TOP_PROVIDERS)
-      .map((p) => ({ ...p, models: modelsOf.get(p.provider) ?? [] }))
-    const out: GroupedProvider[] = top.map((p) => ({ ...p, models: modelsOf.get(p.provider) ?? [] }))
-    if (folded.length > 0) {
-      out.push({
-        provider: OTHER_PROVIDER,
-        tokens: folded.reduce((sum, p) => sum + p.tokens, 0),
-        percent: folded.reduce((sum, p) => sum + p.percent, 0),
-        cacheHit: folded.reduce((sum, p) => sum + p.cacheHit, 0),
-        cacheMiss: folded.reduce((sum, p) => sum + p.cacheMiss, 0),
-        models: folded.flatMap((p) => p.models),
-        folded,
-      })
-    }
-    return out
-  }, [stats])
-
   const trendDaily = groupedStats?.daily ?? []
   const trendModels = groupedStats?.models ?? []
-
-  // The rebuild button's label: its idle name, the armed confirm, or the
-  // in-flight state (the ellipsis is glued on here, the way the loading
-  // indicator does it, so no dictionary carries punctuation).
-  const rebuildLabel = rebuilding
-    ? `${t('rebuilding')}…`
-    : rebuildArmed ? t('rebuildConfirm') : t('rebuild')
 
   return (
     <div className={css.panel} data-dsh-usage-glass="panel" ref={panelRef}>
@@ -353,35 +234,15 @@ export function TokenTotalPanel({ t }: { t: Translator }): JSX.Element {
             />
           </div>
         )}
-        {/* The two toolbar actions are one flex item, not two: the toolbar
-            wraps, and a pair that wrapped apart would strand the rebuild
-            button on a line of its own. The container owns the trailing auto
-            margin, so the pair rides the right edge together. */}
-        <div className={css.actions}>
-          <Button
-            size="sm"
-            variant="outline"
-            className={css.refresh}
-            onClick={() => { void load() }}
-            disabled={loading}
-          >
-            {t('refresh')}
-          </Button>
-          <Tooltip label={t('rebuildHint')} side="top" maxWidth={260}>
-            <Button
-              size="sm"
-              variant="outline"
-              className={clsx(css.rebuild, rebuildArmed && css.rebuildArmed)}
-              aria-pressed={rebuildArmed}
-              disabled={rebuilding}
-              onClick={() => { if (rebuildArmed) void runRebuild(); else armRebuild() }}
-              onBlur={disarmRebuild}
-              onKeyDown={(e) => { if (e.key === 'Escape') disarmRebuild() }}
-            >
-              {rebuildLabel}
-            </Button>
-          </Tooltip>
-        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className={css.refresh}
+          onClick={() => { void load() }}
+          disabled={loading}
+        >
+          {t('refresh')}
+        </Button>
       </div>
 
       {error && <div className={css.errorBanner}>{error}</div>}
@@ -463,30 +324,20 @@ function SettingToggle({ title, desc, checked, ariaLabel, onChange }: {
 }
 
 /**
- * The three bottom-bar enhancement preferences:
- * "Precise cache hit rate" (two decimals on the usage pill and dialog),
+ * The two optional bottom-bar enhancements:
  * "Session token breakdown" (an extra cache-miss row in the usage dialog) and
  * "Streaming throughput" (a live decode-speed estimate while a step streams,
  * replaced by the exact session figure the moment it settles).
  */
 function StatsLineOptions({ t }: { t: Translator }) {
-  const [cachePrecision, setCachePrecision] = useState(statsLineState.cachePrecision)
   const [tokenDetail, setTokenDetail] = useState(statsLineState.tokenDetail)
   const [streamThroughput, setStreamThroughput] = useState(statsLineState.streamThroughput)
   useEffect(() => statsLineState.subscribe(() => {
-    setCachePrecision(statsLineState.cachePrecision)
     setTokenDetail(statsLineState.tokenDetail)
     setStreamThroughput(statsLineState.streamThroughput)
   }), [])
   return (
     <>
-      <SettingToggle
-        title={t('cachePrecision')}
-        desc={t('cachePrecisionDesc')}
-        checked={cachePrecision}
-        ariaLabel={t('cachePrecision')}
-        onChange={(next) => { statsLineState.setCachePrecision(next) }}
-      />
       <SettingToggle
         title={t('tokenDetail')}
         desc={t('tokenDetailDesc')}
@@ -941,12 +792,12 @@ function UsageBreakdown({ models, providers, total, t }: {
   const modelRows = useMemo<BreakdownRow[]>(() => {
     const byName = new Map<string, { tokens: number; cacheHit: number; cacheMiss: number; providers: Set<string> }>()
     for (const m of models) {
-      const name = modelNameOf(m.model)
+      const name = m.model
       const acc = byName.get(name) ?? { tokens: 0, cacheHit: 0, cacheMiss: 0, providers: new Set<string>() }
       acc.tokens += m.tokens
       acc.cacheHit += m.cacheHit
       acc.cacheMiss += m.cacheMiss
-      acc.providers.add(m.provider)
+      for (const provider of m.providers ?? [m.provider]) acc.providers.add(provider)
       byName.set(name, acc)
     }
     return [...byName.entries()]
@@ -984,8 +835,11 @@ function UsageBreakdown({ models, providers, total, t }: {
   return (
     <section className={css.section}>
       <div className={css.sectionHead}>
-        <h3 className={css.sectionTitle}>{tab === 'model' ? t('modelUsage') : t('providerUsage')}</h3>
-        <div className={css.group} role="tablist" aria-label={t('modelUsage')}>
+        {/* One title for both tabs: the section is ONE ranking, seen through
+            two lenses (by model / by provider), so the heading names the
+            section rather than the current lens. */}
+        <h3 className={css.sectionTitle}>{t('usageRanking')}</h3>
+        <div className={css.group} role="tablist" aria-label={t('usageRanking')}>
           <Button size="sm" variant="ghost" role="tab" aria-selected={tab === 'model'} className={clsx(css.segItem, tab === 'model' && css.segActive)} onClick={() => setTab('model')}>
             {t('byModel')}
           </Button>
@@ -1030,7 +884,7 @@ function toggleIn(set: ReadonlySet<string>, key: string): ReadonlySet<string> {
 }
 
 function aggregateByModel(daily: Array<{ byModel: Record<string, number> }>): Record<string, number> {
-  const out: Record<string, number> = {}
+  const out: Record<string, number> = Object.create(null)
   for (const d of daily) {
     for (const [m, v] of Object.entries(d.byModel)) out[m] = (out[m] ?? 0) + v
   }

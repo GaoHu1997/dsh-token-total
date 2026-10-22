@@ -145,6 +145,13 @@ export interface UsageSessionPersistence {
   open?(id: string, access: 'read' | 'write', options?: { signal?: AbortSignal }): Promise<UsageSessionHandleReader>
 }
 
+/** Model metadata is resolved from the exact route, but only its human-readable
+ *  name becomes the statistics grouping key. Optional service for older hosts. */
+export interface UsageLlmService {
+  resolveModelInfo?(provider: string, model: string, signal?: AbortSignal): Promise<{ name: string }>
+  listModels?(provider: string): Promise<readonly { id: string; name: string }[]>
+}
+
 /** The route a session's log records for its model calls (mirror of
  *  dsh-agent-loop RequestContext). */
 export interface UsageSessionRoute {

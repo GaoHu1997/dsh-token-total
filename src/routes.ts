@@ -1,4 +1,4 @@
-﻿/**
+/**
  * The /token-total/api route table: a small JSON RPC over the fenced web route.
  * Methods:
  *   - range  { range, from?, to?, source? } -> TokenTotalRange
@@ -11,11 +11,11 @@
  * this listener's own bind address).
  */
 
-import type { Context } from './context-types.ts'
+import type { Context, UsageLlmService } from './context-types.ts'
+import { resolveModelNames } from './model-names.ts'
 import type { UsageHttpRequest, UsageHttpResponse, UsageWebRoute } from './context-types.ts'
-import { UsageStore } from './store.ts'
-import type { UsageDayRow, UsageHourRow } from './store.ts'
-import { UsageCollector } from './collector.ts'
+import type { UsageStore, UsageDayRow, UsageHourRow } from './store.ts'
+import type { UsageCollector } from './collector.ts'
 import { aggregateSamples } from './query.ts'
 import type { Granularity, UsageSample } from './query.ts'
 import type { BackfillStatus, SessionUsageRequest, TokenTotalRange, TokenTotalRequest } from './wire.ts'
@@ -131,10 +131,14 @@ export async function aggregateRange(
   from: string,
   to: string,
   granularity: Granularity = 'day',
+  llm?: UsageLlmService,
 ): Promise<TokenTotalRange> {
   const rows: Array<UsageDayRow | UsageHourRow> = granularity === 'hour'
     ? await store.rangeHourRows(from, to)
     : await store.rangeRows(from, to)
+  const names = await resolveModelNames(rows.filter((row) =>
+    row.inputTokens + row.outputTokens + row.cacheReadTokens + row.cacheWriteTokens > 0,
+  ).map((row) => row.model), llm)
   const samples = (function* (): Generator<UsageSample> {
     for (const row of rows) {
       const hour = 'hour' in row ? row.hour : undefined
@@ -146,6 +150,7 @@ export async function aggregateRange(
           day,
           hour,
           model: row.model,
+          modelName: names.get(row.model),
           inputTokens: row.inputTokens,
           outputTokens: row.outputTokens,
           cacheReadTokens: row.cacheReadTokens,
@@ -186,7 +191,8 @@ export function buildUsageRoute(ctx: Context, deps: RoutesDeps): UsageWebRoute {
       if (method === 'POST' && path === '/token-total/api/range') {
         const body = (await readJsonBody(req)) as Partial<TokenTotalRequest>
         const { from, to } = resolveRange(body as TokenTotalRequest)
-        const stats = await aggregateRange(deps.store, from, to, granularityOf(body.range))
+        const llm = ctx.get('llm') as UsageLlmService | undefined
+        const stats = await aggregateRange(deps.store, from, to, granularityOf(body.range), llm)
         writeJson(res, { ok: true, value: stats })
         return
       }

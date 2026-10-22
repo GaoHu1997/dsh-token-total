@@ -3,8 +3,8 @@
  * replicated from the official ui-chat StatsPills (DSH 0.1.5-alpha.1) —
  * StatsPills.tsx, turn-metrics.ts and token-format.ts. The official package
  * is not a client-bundle external, so a shadowing plugin cannot import its
- * internals; these copies keep the "both toggles off" pills identical to
- * the official ones (guarded by the render tests).
+ * internals; these copies preserve the official timing and token accounting,
+ * while the plugin always renders a two-decimal cache-hit rate.
  *
  * Three plugin-side readouts: a two-decimal cache-hit rate, a five-item
  * token breakdown (total / input / cache hit / cache miss / output), and the
