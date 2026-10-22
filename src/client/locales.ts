@@ -56,10 +56,6 @@ export type TokenTotalKey =
   | 'percent'
   | 'asOf'
   | 'empty'
-  | 'tokenDetail'
-  | 'tokenDetailDesc'
-  | 'streamThroughput'
-  | 'streamThroughputDesc'
   | 'stats.counts'
   | 'stats.tokensPerSecond'
   | 'stats.cacheHit'
@@ -128,10 +124,6 @@ export const en: Record<TokenTotalKey, string> = {
   percent: 'Share',
   asOf: 'As of',
   empty: 'No usage data in this time range yet. Token usage is recorded from the day the panel is installed, including a one-time scan of your existing sessions.',
-  tokenDetail: 'Conversation token breakdown',
-  tokenDetailDesc: 'Show total, cache hit/miss and output tokens in the conversation bottom bar.',
-  streamThroughput: 'Streaming throughput',
-  streamThroughputDesc: 'Show an estimated decode speed in the conversation bottom bar while a response streams, then the exact session figure once it settles.',
   'stats.counts': '{turns} turns · {steps} steps',
   'stats.tokensPerSecond': '{throughput} tok/s',
   'stats.cacheHit': 'Cache hit {percent}%',
@@ -201,10 +193,6 @@ export const zh: Record<TokenTotalKey, string> = {
   percent: '占比',
   asOf: '统计截至',
   empty: '当前时间范围内暂无用量数据。Token 用量从本面板启用后开始累计，并会一次性回扫已有的历史会话。',
-  tokenDetail: '会话 Token 明细',
-  tokenDetailDesc: '在会话底部信息栏显示总 Token、命中/未命中缓存与输出明细。',
-  streamThroughput: '流式吞吐速度',
-  streamThroughputDesc: '输出过程中在会话底部信息栏显示估算的解码速度，输出结束后回到会话累计的精确值。',
   'stats.counts': '{turns} 轮 · {steps} 步',
   'stats.tokensPerSecond': '{throughput} tok/s',
   'stats.cacheHit': '缓存命中 {percent}%',
@@ -274,10 +262,6 @@ export const zhTW: Record<TokenTotalKey, string> = {
   percent: '佔比',
   asOf: '統計截至',
   empty: '目前時間範圍內尚無用量資料。Token 用量自本面板啟用後開始累計，並會一次掃描既有的歷史會話。',
-  tokenDetail: '會話 Token 明細',
-  tokenDetailDesc: '在會話底部資訊欄顯示總 Token、命中/未命中快取與輸出明細。',
-  streamThroughput: '串流吞吐速度',
-  streamThroughputDesc: '輸出過程中在會話底部資訊欄顯示估算的解碼速度，輸出結束後回到會話累計的精確值。',
   'stats.counts': '{turns} 輪 · {steps} 步',
   'stats.tokensPerSecond': '{throughput} tok/s',
   'stats.cacheHit': '快取命中 {percent}%',

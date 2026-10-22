@@ -23,11 +23,11 @@
  * Which pair to register is read from the dock's entry ledger in
  * src/client/index.tsx.
  *
- * The cache-hit rate always uses the precise readout. The optional session
- * token breakdown adds a cache-miss row to the usage dialog; its preference
- * lives in stats-line-state.ts (shared with the usage panel) and applies instantly.
+ * Cache-hit precision, the full session token breakdown and streaming
+ * throughput are always enabled; no stored preferences gate these readouts.
+ * The token dialog includes the cache-miss row alongside every billing bucket.
  *
- * The other toggle, streaming throughput, replaces the gauge pill's speed
+ * Streaming throughput replaces the gauge pill's speed
  * figure with a live estimate while a step is still streaming and drops back to
  * the official session figure the moment it settles. That subscription lives in
  * its own child component so stream deltas never re-render the pills. The live
@@ -47,7 +47,6 @@ import { createPortal } from 'react-dom'
 import { IconDatabaseOutline16, IconGaugeOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { LOCALE_NS } from './locales.ts'
-import { statsLineState } from './stats-line-state.ts'
 import { MEASURE_STYLE, useStatDialog, type StatDialogSeat } from './stat-dialog.ts'
 import {
   billedInputTokens, cacheHitPercentPrecise, deriveStats,
@@ -176,12 +175,11 @@ function markDockContainer(row: HTMLDivElement | null): void {
 const LIVE_SPEED_REFRESH_MS = 1_000
 
 /**
- * The gauge pill's speed slot while the streaming-throughput preference is on.
+ * The gauge pill's always-on streaming speed slot.
  *
- * It subscribes to `legacy.partial` itself, and mounting is what turns that
- * subscription on — so with the preference off the pills stay entirely out of
- * the per-frame delta path, which is the same care the official StatsPills
- * takes. Until the streaming step has a measurable window the official session
+ * It subscribes to `legacy.partial` itself so per-frame deltas re-render only
+ * this child, not the surrounding pills. Until the streaming step has a
+ * measurable window the official session
  * figure stays on screen, so the slot is never empty and the handover at
  * settle is a plain value change.
  *
@@ -260,7 +258,7 @@ function LiveSpeed({ useChat, scale, fallback, t }: {
     : t('stats.tokensPerSecond', { throughput: formatTokensPerSecond(reading) })} />
 }
 
-function TimePill({ stats, t, dialog, useChat, scale, liveSpeed, dock }: {
+function TimePill({ stats, t, dialog, useChat, scale, dock }: {
   stats: WindowStats
   t: T
   /** The row's shared exclusive slot; omitted by a split-mode entry, which
@@ -269,8 +267,6 @@ function TimePill({ stats, t, dialog, useChat, scale, liveSpeed, dock }: {
   useChat: ChatSnapshotSelectorHook
   /** Correction measured from this session's settled steps (1 = raw prior). */
   scale: number
-  /** Whether the streaming-throughput preference is on. */
-  liveSpeed: boolean
   /** Whether the host's own dock row owns the layout (DSH >= 0.2.1-alpha.1). */
   dock: boolean
 }) {
@@ -287,9 +283,7 @@ function TimePill({ stats, t, dialog, useChat, scale, liveSpeed, dock }: {
   const label = (
     <span className={css.label}>
       {counts}
-      {liveSpeed
-        ? <LiveSpeed useChat={useChat} scale={scale} fallback={officialTps} t={t} />
-        : <SpeedFigure text={officialTps} />}
+      <LiveSpeed useChat={useChat} scale={scale} fallback={officialTps} t={t} />
     </span>
   )
   // A window without one timed figure has no dialog rows to show, so the pill
@@ -368,7 +362,7 @@ function TimePill({ stats, t, dialog, useChat, scale, liveSpeed, dock }: {
   )
 }
 
-function UsagePill({ usage, tree, t, dialog, tokenDetail, dock }: {
+function UsagePill({ usage, tree, t, dialog, dock }: {
   usage: Parameters<typeof billedInputTokens>[0]
   /** The whole session tree (main + subagents) from the host, when it has
    *  answered. Subagent spend is invisible to the native projection, so the
@@ -377,7 +371,6 @@ function UsagePill({ usage, tree, t, dialog, tokenDetail, dock }: {
   t: T
   /** The row's shared exclusive slot; omitted by a split-mode entry. */
   dialog?: PillDialog
-  tokenDetail: boolean
   /** Whether the host's own dock row owns the layout (DSH >= 0.2.1-alpha.1). */
   dock: boolean
 }) {
@@ -462,12 +455,8 @@ function UsagePill({ usage, tree, t, dialog, tokenDetail, dock }: {
             <dd>{exactCount(billed.cacheReadTokens)}</dd>
             <dt>{t('message.turnUsage.cacheWrite')}</dt>
             <dd>{exactCount(billed.cacheWriteTokens)}</dd>
-            {tokenDetail && (
-              <>
-                <dt>{t('stats.cacheMiss')}</dt>
-                <dd>{exactCount(tokenBreakdown(billed).cacheMiss)}</dd>
-              </>
-            )}
+            <dt>{t('stats.cacheMiss')}</dt>
+            <dd>{exactCount(tokenBreakdown(billed).cacheMiss)}</dd>
             <dt>{t('message.turnUsage.output')}</dt>
             <dd>{exactCount(billed.outputTokens)}</dd>
             {/* The split that the native figure cannot show: this session's own
@@ -512,14 +501,6 @@ export const StatsLineEnhanced = memo(function StatsLineEnhanced(
   // back to the window-scoped fold wholesale (same field names).
   const projected = useProjection('sessionStats')
   const stats = useMemo(() => projected ?? deriveStats(settledNodes ?? []), [projected, settledNodes])
-  // Toggles live in the same client bundle as the usage panel; subscribe so
-  // a flip in the panel updates the bottom bar immediately.
-  const [tokenDetail, setTokenDetail] = useState(statsLineState.tokenDetail)
-  const [streamThroughput, setStreamThroughput] = useState(statsLineState.streamThroughput)
-  useEffect(() => statsLineState.subscribe(() => {
-    setTokenDetail(statsLineState.tokenDetail)
-    setStreamThroughput(statsLineState.streamThroughput)
-  }), [])
   // The live estimate's correction, measured once per settled-node change: the
   // session's own reported output tokens against what the published text
   // density predicted for the same text. 1 (the raw prior) until a settled step
@@ -546,7 +527,6 @@ export const StatsLineEnhanced = memo(function StatsLineEnhanced(
           t={t}
           useChat={useChat}
           scale={tokenScale}
-          liveSpeed={streamThroughput}
           dock={false}
           dialog={{
             open: openPill === 'time',
@@ -563,7 +543,6 @@ export const StatsLineEnhanced = memo(function StatsLineEnhanced(
             open: openPill === 'usage',
             setOpen: (open) => { setOpenPill(open ? 'usage' : null) },
           }}
-          tokenDetail={tokenDetail}
           dock={false}
         />
       )}
@@ -588,14 +567,10 @@ export const StatsActivityEntry = memo(function StatsActivityEntry(
   const settledNodes = useChat(s => s.legacy.nodes)
   const projected = useProjection('sessionStats')
   const stats = useMemo(() => projected ?? deriveStats(settledNodes ?? []), [projected, settledNodes])
-  const [streamThroughput, setStreamThroughput] = useState(statsLineState.streamThroughput)
-  useEffect(() => statsLineState.subscribe(() => {
-    setStreamThroughput(statsLineState.streamThroughput)
-  }), [])
   const tokenScale = useMemo(() => measuredTokenScale(settledNodes ?? []) ?? 1, [settledNodes])
   if (stats.steps === 0) return null
   return (
-    <TimePill stats={stats} t={t} useChat={useChat} scale={tokenScale} liveSpeed={streamThroughput} dock />
+    <TimePill stats={stats} t={t} useChat={useChat} scale={tokenScale} dock />
   )
 })
 
@@ -609,10 +584,6 @@ export const StatsUsageEntry = memo(function StatsUsageEntry(
   { useProjection, t, sessionId }: StatsLineEnhancedProps,
 ) {
   const usage = useProjection('tokenUsage')
-  const [tokenDetail, setTokenDetail] = useState(statsLineState.tokenDetail)
-  useEffect(() => statsLineState.subscribe(() => {
-    setTokenDetail(statsLineState.tokenDetail)
-  }), [])
   const tree = useSessionUsage(sessionId, usageSignature(usage, usage === undefined ? 0 : 1))
   const hasTokens = usage !== undefined
     && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)
@@ -622,7 +593,6 @@ export const StatsUsageEntry = memo(function StatsUsageEntry(
       usage={usage}
       tree={tree}
       t={t}
-      tokenDetail={tokenDetail}
       dock
     />
   )

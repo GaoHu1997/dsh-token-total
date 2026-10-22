@@ -257,9 +257,9 @@ export function apply(ctx: Context): void {
   }, StatsPanelIcon))
 
   // The bottom-bar takeover: shadow the official stats pills (same id, lower
-  // priority — the slot's lowest live entry renders) so the pills match the
-  // official ones while every toggle is off and gain this plugin's readouts
-  // when they are on. Disposal restores the official entries.
+  // priority — the slot's lowest live entry renders) with this plugin's
+  // always-on precision, token breakdown and live-speed readouts.
+  // Disposal restores the official entries.
   //
   // WHICH ids to shadow depends on the host line: DSH 0.2.1-alpha.1 split the
   // single 'stats' entry into 'activity' (counts/speed/time) and 'usage'

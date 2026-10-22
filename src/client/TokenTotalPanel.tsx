@@ -18,7 +18,7 @@
  * semantic tokens. The functionality replicates the reasonix usage stats
  * feature; the implementation is DSH-native.
  */
-import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import clsx from 'clsx'
 import { Activity, ArrowDownToLine, ArrowUpFromLine, ChevronDown, ChevronRight, Coins, Database, MessagesSquare } from 'lucide-react'
 import { Button, Input, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -29,7 +29,6 @@ import { Donut, useDonutSize, type DonutSegment } from './Donut.tsx'
 import { formatTokens, formatCompact, formatPercent, cacheRate, cacheRateText, daysBetween, localDay, indexOfDay, bucketAxisLabel, bucketTitle, smoothPath, niceTicks } from './format.ts'
 import type { TokenTotalKey } from './locales.ts'
 import type { TokenTotalTranslator } from './index.tsx'
-import { statsLineState } from './stats-line-state.ts'
 import css from './TokenTotalPanel.module.css'
 
 type Translator = TokenTotalTranslator
@@ -266,9 +265,6 @@ export function TokenTotalPanel({ t }: { t: Translator }): JSX.Element {
       {!error && stats && isEmptyRange(stats) && (
         <div className={css.empty}>{t('empty')}</div>
       )}
-      <div className={css.prefGroup} data-dsh-usage-glass="pref">
-        <StatsLineOptions t={t} />
-      </div>
     </div>
   )
 }
@@ -280,80 +276,6 @@ export function TokenTotalPanel({ t }: { t: Translator }): JSX.Element {
  *  but no tokens) both carry real usage and must not read as "no data". */
 function isEmptyRange(stats: TokenTotalRange): boolean {
   return stats.tokens === 0 && stats.cacheHit === 0 && stats.requests === 0 && stats.turns === 0
-}
-
-// ── Bottom-bar preference rows ────────────────────────────────────────────
-
-/**
- * One framed preference row: title + subtitle on the left, the switch on the
- * right. The switch mirrors the official DSH switch (role=switch, track +
- * thumb); the shared store keeps each row and its consumer in sync
- * instantly because both run in the same client bundle.
- */
-function SettingToggle({ title, desc, checked, ariaLabel, onChange }: {
-  title: string
-  desc: string
-  checked: boolean
-  ariaLabel: string
-  onChange: (next: boolean) => void
-}) {
-  // One description id per row; the switch names it so a screen reader
-  // announces the explanation alongside the title.
-  const descId = useId()
-  return (
-    <div className={css.prefRow}>
-      <div className={css.entryOptionText}>
-        <div className={css.entryOptionTitle}>{title}</div>
-        <div className={css.entryOptionDesc} id={descId}>{desc}</div>
-      </div>
-      <button
-        type="button"
-        className={css.switch}
-        role="switch"
-        aria-checked={checked}
-        aria-label={ariaLabel}
-        aria-describedby={descId}
-        onClick={() => { onChange(!checked) }}
-      >
-        <span className={css.switchTrack} data-on={checked || undefined} aria-hidden="true">
-          <span className={css.switchThumb} />
-        </span>
-      </button>
-    </div>
-  )
-}
-
-/**
- * The two optional bottom-bar enhancements:
- * "Session token breakdown" (an extra cache-miss row in the usage dialog) and
- * "Streaming throughput" (a live decode-speed estimate while a step streams,
- * replaced by the exact session figure the moment it settles).
- */
-function StatsLineOptions({ t }: { t: Translator }) {
-  const [tokenDetail, setTokenDetail] = useState(statsLineState.tokenDetail)
-  const [streamThroughput, setStreamThroughput] = useState(statsLineState.streamThroughput)
-  useEffect(() => statsLineState.subscribe(() => {
-    setTokenDetail(statsLineState.tokenDetail)
-    setStreamThroughput(statsLineState.streamThroughput)
-  }), [])
-  return (
-    <>
-      <SettingToggle
-        title={t('tokenDetail')}
-        desc={t('tokenDetailDesc')}
-        checked={tokenDetail}
-        ariaLabel={t('tokenDetail')}
-        onChange={(next) => { statsLineState.setTokenDetail(next) }}
-      />
-      <SettingToggle
-        title={t('streamThroughput')}
-        desc={t('streamThroughputDesc')}
-        checked={streamThroughput}
-        ariaLabel={t('streamThroughput')}
-        onChange={(next) => { statsLineState.setStreamThroughput(next) }}
-      />
-    </>
-  )
 }
 
 function StatCards({ stats, t }: { stats: TokenTotalRange; t: Translator }) {
