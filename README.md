@@ -63,9 +63,9 @@ dsh plugin --profile <profile> add "file:D:\work\dsh-token-total"
 
 ## 数据来源与统计口径
 
-- **事件来源**：`sessionPersistence` 的会话日志（`assistant/message` 的 `usage`）。插件订阅 `session/event` 实时增量累加，同时一次性回扫已有历史会话；`llm/retry-started` 会清空当前 `(turn, step)` 槽位，所以重试不会漏计也不会重复计。
+- **事件来源**：`sessionPersistence` 的会话日志。兼容 `assistant/message` 的顶层 `usage`，也读取消息及失败 `assistant/attempt` 的原始流式用量；同一次请求以最后一份用量为准，修正值按差额更新。插件订阅 `session/event` 实时增量累加，同时一次性回扫已有历史会话；`llm/retry-started` 会清空当前 `(turn, step)` 槽位，因此失败尝试和后续重试分别计入，不重复累加同一次请求的多份报告。
 - **本地持久化**：聚合结果写入 storage-domain 的 `token_total_history` 域（`$DSH_HOME/storages/` 下），纯本地、无外部依赖。回扫游标按会话记录已消费的事件序号，重启后从断点继续。
-- **单会话统计**：不走聚合存储（那里没有会话维度），而是按需读该会话及其所有子孙会话的日志重放求和，结果短暂缓存，并在该会话树任一成员产生新事件时精确失效。
+- **单会话统计**：不走聚合存储（那里没有会话维度），而是按需重放该会话及全部子孙会话的自有日志；已加载会话优先使用实时事件快照，避免持久化缓冲造成漏算。结果缓存 4 秒，任意会话的新事件都会使缓存失效，包含此前尚未发现的子会话。前端从首次读取起每 4 秒刷新，显示时使用原生实时主会话用量、主会话压缩调用用量与子树用量之和，胶囊与弹窗共用同一口径；切换会话时立即清除旧会话读数。读取失败不会把部分子树当作成功结果覆盖已有读数。
 - **缓存命中率** = 缓存命中 token ÷ 输入 token 总量（命中 + 未命中）。
 
 ## HTTP 接口
@@ -100,7 +100,7 @@ pnpm install
 pnpm run build        # tsc 声明 + 宿主/浏览器两个 bundle
 pnpm run typecheck    # 宿主半区
 pnpm run typecheck:client
-pnpm test             # 模型显示名称聚合、趋势、底部偏好回归测试
+pnpm test             # 模型/供应商聚合、会话树、重试用量、底部展示与刷新回归测试
 ```
 
 产物：`lib/index.js`（宿主，ESM）、`lib/client.js`（浏览器，CJS 包装进 `__ModuleLoader__.load`）、`lib/types/**/*.d.ts`。CSS Modules 在构建时被内联成 `<style data-plugin-css>` 注入，因此 Web 外壳不需要 CSS 管线。

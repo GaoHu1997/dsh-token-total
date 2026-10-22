@@ -26,6 +26,40 @@ async function lookup<T>(read: (signal: AbortSignal) => Promise<T>, timeoutMs: n
   }
 }
 
+/** Resolve provider route ids to the labels the model selector shows. Both
+ *  catalogs are presentational and synchronous on the host runtime, so this is
+ *  a plain in-process read rather than a per-request lookup: a missing service,
+ *  a throwing adapter, or an unexpected promise all resolve to an empty map and
+ *  every surface falls back to the raw historical route id. */
+export function resolveProviderNames(llm?: UsageLlmService): Record<string, string> {
+  const names: Record<string, string> = Object.create(null)
+  if (!llm) return names
+  try {
+    for (const provider of catalog(llm.listProviders?.())) {
+      const name = provider.name?.trim()
+      if (provider.id && name) names[provider.id] = name
+    }
+  } catch {
+    // Metadata is auxiliary: a broken catalog must never fail the range query.
+  }
+  try {
+    for (const entry of catalog(llm.listConfigurableProviders?.())) {
+      const name = entry.displayName?.trim()
+      if (entry.provider && name && names[entry.provider] === undefined) names[entry.provider] = name
+    }
+  } catch {
+    // Same contract as above.
+  }
+  return names
+}
+
+/** Both catalogs are declared synchronous, but a host that publishes them over
+ *  a remote face would hand back a promise; treat anything that is not an array
+ *  as "no metadata" instead of throwing mid-query. */
+function catalog<T>(value: readonly T[] | undefined): readonly T[] {
+  return Array.isArray(value) ? value : []
+}
+
 /** Resolve each distinct route once per range query. Unknown/deleted providers
  *  fall back to their bare historical model names in aggregateSamples(). */
 export async function resolveModelNames(

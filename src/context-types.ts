@@ -150,6 +150,16 @@ export interface UsageSessionPersistence {
 export interface UsageLlmService {
   resolveModelInfo?(provider: string, model: string, signal?: AbortSignal): Promise<{ name: string }>
   listModels?(provider: string): Promise<readonly { id: string; name: string }[]>
+  /** The provider catalog: route id -> the display name the model selector
+   *  shows. Synchronous on every host line this plugin supports (the llm
+   *  runtime's own `listProviders`, mirrored by the dsh-llm service). Optional:
+   *  a host without it leaves every ranked provider row labelled by its raw
+   *  historical route id. */
+  listProviders?(): readonly { id: string; name: string }[]
+  /** The configured-provider view (the models page's own list), whose
+   *  `displayName` is the same label. Read as a fallback for a route that
+   *  `listProviders` omits. */
+  listConfigurableProviders?(): readonly { provider: string; displayName: string }[]
 }
 
 /** The route a session's log records for its model calls (mirror of
@@ -168,8 +178,13 @@ export interface UsageSessionHandle {
   id: string
   cwd?: string
   createdAt?: number
-  /** The parent session a subagent session was delegated from (mirror of the
-   *  SessionHeader field; absent on a root session). */
+  /** Modern hosts retain creation metadata on Session.header, not as getters. */
+  header?: UsageSessionHeader
+  /** Exact fork prefix, distinct from the resume/construction seed length. */
+  inheritedEventCount?: number
+  /** Immutable current live log; avoids the persistence backend's batching lag. */
+  snapshotEvents?(): readonly UsageSessionEvent[]
+  /** Legacy direct parent; modern hosts expose header.parentSession instead. */
   parentSession?: string
   /** 0 for a root session; the delegation depth for a subagent. */
   delegationDepth?: number

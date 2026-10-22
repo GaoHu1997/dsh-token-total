@@ -499,16 +499,54 @@
   font-size: 11px;
 }
 
-.modelList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  flex: 1 1 260px;
+/* Two ranking cards, side by side: MODELS left, PROVIDERS right. Both are
+   always on screen (no lens/tab switch), so they share one row grid and
+   stretch to a common height; a narrow pane stacks them instead. */
+.rankCards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .rankCards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Each card is the bordered surface its rows live in; the title is a recessed
+   header strip, so the two rankings read as two equal panels. */
+.rankCard {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
   overflow: hidden;
+}
+
+.rankCardTitle {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 55%, transparent);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rankList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Every row opens a hover tip (the cross-dimension detail), so it carries the
+   same hover affordance as the chart marks. */
+.modelRow:hover {
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 60%, transparent);
 }
 
 /* Position column: the row's rank inside its section. The Other bucket holds
@@ -665,6 +703,35 @@
 .tipTitle {
   font-weight: 600;
   margin-bottom: 4px;
+}
+
+/* A provider row's raw route id, kept out of the row label but reachable on
+   hover (the row shows the display name). */
+.tipSubtitle {
+  margin: -2px 0 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+/* Breakdown heading inside a row tip: names the cross-dimension list under it
+   ("By provider" under a model, "By model" under a provider). */
+.tipLabel {
+  margin-bottom: 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+/* The breakdown line pushes its volume to the right edge of the plate. */
+.tipName {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tipValue {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .tipRow {

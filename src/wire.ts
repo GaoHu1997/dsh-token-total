@@ -32,6 +32,10 @@ export interface ModelTokenUsage {
   provider: string
   /** All source providers; optional for compatibility with older responses. */
   providers?: string[]
+  /** Per-provider token split of this one model, largest first — the ranked
+   *  row's hover detail ("which providers served this model"). Optional so a
+   *  pre-cross-breakdown host still renders. */
+  providerTokens?: Array<{ provider: string; tokens: number }>
   tokens: number
   percent: number // 0..100
   /** Cached input tokens this model served (rate numerator). */
@@ -47,6 +51,10 @@ export interface ProviderTokenUsage {
   percent: number
   cacheHit: number
   cacheMiss: number
+  /** Per-model token split this provider served, largest first — the ranked
+   *  row's hover detail ("which models this provider served"). Optional so a
+   *  pre-cross-breakdown host still renders. */
+  modelTokens?: Array<{ model: string; tokens: number }>
 }
 
 /** The full aggregate the panel renders for one time range. */
@@ -76,6 +84,11 @@ export interface TokenTotalRange {
   daily: DailyTokenUsage[]
   models: ModelTokenUsage[]
   providers: ProviderTokenUsage[]
+  /** Provider route id -> the display name the model selector shows. Filled by
+   *  the host route from the llm service metadata; a provider missing here (a
+   *  deleted route, an older host) renders as its raw id. Optional so a host
+   *  that cannot resolve names still serves a valid payload. */
+  providerNames?: Record<string, string>
 }
 
 /** The usage statistics panel aggregate request. */
@@ -98,8 +111,11 @@ export interface SessionUsageTotals {
  *  The composer stats row renders this so a delegating session shows its whole
  *  spend (the native `tokenUsage` projection only covers the main agent). */
 export interface SessionUsageTree {
-  /** The root session's own (main agent) usage. */
+  /** The root session's own usage, including logged compaction calls. */
   self: SessionUsageTotals
+  /** Root-only compaction spend already included in `self`, but absent from
+   *  the native `tokenUsage` projection. Optional for older host responses. */
+  selfCompaction?: SessionUsageTotals
   /** Sum over every descendant (subagent) session. */
   subagents: SessionUsageTotals
   /** self + subagents. */

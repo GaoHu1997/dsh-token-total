@@ -20,7 +20,7 @@
  */
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import clsx from 'clsx'
-import { Activity, ArrowDownToLine, ArrowUpFromLine, ChevronDown, ChevronRight, Coins, Database, MessagesSquare } from 'lucide-react'
+import { Activity, ArrowDownToLine, ArrowUpFromLine, Coins, Database, MessagesSquare } from 'lucide-react'
 import { Button, Input, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DailyTokenUsage, ModelTokenUsage, ProviderTokenUsage, TokenTotalRange, TokenTotalRequest } from '../wire.ts'
 import { fetchRange, UsageApiError } from './api.ts'
@@ -52,8 +52,8 @@ const TOP_MODELS = 10
 const OTHER_MODEL = '\u0000other' // sentinel; cannot collide with a real model ref
 const OTHER_COLOR = 'var(--dsw-chart-other)'
 
-/** How many rows each bottom breakdown tab lists (requirement 下部: 展示前 5). */
-const TOP_BREAKDOWN = 5
+/** How many rows each ranking card lists (扩展到 8 个排行). */
+const TOP_BREAKDOWN = 8
 
 /** Shared empty key set: one stable identity for a collapsed expand state. */
 const NO_KEYS: ReadonlySet<string> = new Set()
@@ -254,7 +254,14 @@ export function TokenTotalPanel({ t }: { t: Translator }): JSX.Element {
           <StatCards stats={stats} t={t} />
           <Heatmap daily={heatDaily} from={heatWindow.from} to={heatWindow.to} t={t} panelRef={panelRef} />
           <DailyTrend models={trendModels} daily={trendDaily} granularity={stats?.granularity ?? 'day'} t={t} colorForModel={colorForModel} panelRef={panelRef} />
-          <UsageBreakdown models={stats.models} providers={stats.providers} total={stats.tokens} t={t} />
+          <UsageBreakdown
+            models={stats.models}
+            providers={stats.providers}
+            total={stats.tokens}
+            providerNames={stats.providerNames}
+            t={t}
+            panelRef={panelRef}
+          />
           {stats.to && (
             <div className={css.foot}>
               {t('asOf')} {stats.to}
@@ -683,104 +690,243 @@ function DailyTrend({ models, daily, granularity, t, colorForModel, panelRef }: 
   )
 }
 
-// ── Section 6: bottom breakdown — top 5 by model / by provider ────────
+// ── Section 6: bottom ranking — top 8 by model / by provider ──────────────
 //
-// Requirement 下部: two tabs, one ranking by MODEL and one by PROVIDER, each
-// listing the top 5 names with total tokens and the cache hit rate.
+// Two side-by-side cards, always on screen (no tabs): the left card ranks
+// MODELS, the right ranks PROVIDERS, each listing its top 8 rows.
 //
-// The by-model tab aggregates by MODEL NAME, not by the provider/model ref:
+// The by-model card aggregates by MODEL NAME, not by the provider/model ref:
 // the same model served through two providers must show as ONE row
-// (同名模型不同供应商需要聚合). The by-provider tab is already aggregated by
-// provider upstream, so it ranks the provider rows the host returned.
+// (同名模型不同供应商需要聚合). The by-provider card is already aggregated by
+// provider upstream, so it ranks the provider rows the host returned, labelled
+// with the selector's display name (`providerNames`).
+//
+// Both cards keep the same row anatomy — rank, swatch, name, tokens, share,
+// cache hit rate — and move the cross-dimension detail into the hover tip: a
+// model row explains which providers served it, a provider row explains which
+// models it served. Hovering therefore never displaces the share column.
+
+/** One child line of a row's hover detail (a provider under a model, or a
+ *  model under a provider). `tokens` is null when the host payload predates
+ *  the cross-dimension split and only the source NAME is known. */
+interface RankChild {
+  key: string
+  name: string
+  tokens: number | null
+  color: string
+}
+
+/** The hover detail of one ranked row. The tip itself renders once, in
+ *  UsageBreakdown, so only one row can be explained at a time. */
+interface RankTip {
+  anchor: Element
+  title: string
+  /** The raw route id, set only when it differs from the display label. */
+  subtitle?: string
+  tokens: number
+  cacheHit: number
+  cacheMiss: number
+  breakdownLabel: string
+  breakdown: RankChild[]
+}
 
 interface BreakdownRow {
   key: string
   name: string
-  detail?: string
+  subtitle?: string
   tokens: number
   cacheHit: number
   cacheMiss: number
   color: string
+  breakdownLabel: string
+  breakdown: RankChild[]
 }
 
-function UsageBreakdown({ models, providers, total, t }: {
+/** Provider hues run 1..5 then the gray tail (a provider beyond the palette is
+ *  rare: the card lists 8 rows, the palette names 5). */
+function providerColor(index: number): string {
+  return index < 5 ? `var(--dsw-provider-${index + 1})` : 'var(--dsw-provider-other)'
+}
+
+/** Model hues run 1..10 then the gray Other step (mirrors colorForModel). */
+function modelColor(index: number): string {
+  return index < TOP_MODELS ? `var(--dsw-chart-${index + 1})` : OTHER_COLOR
+}
+
+function UsageBreakdown({ models, providers, total, providerNames, t, panelRef }: {
   models: ModelTokenUsage[]
   providers: ProviderTokenUsage[]
   total: number
+  providerNames?: Record<string, string>
   t: Translator
+  panelRef: RefObject<HTMLDivElement | null>
 }) {
-  const [tab, setTab] = useState<'model' | 'provider'>('model')
+  const [tip, setTip] = useState<RankTip | null>(null)
+
+  // The display label for a provider route: the host-resolved selector name
+  // when there is one, else the raw historical id (a deleted/renamed route).
+  // The typeof guard keeps a prototype-shaped key ("constructor") from being
+  // read as a label.
+  const providerLabel = useCallback((provider: string): string => {
+    const named = providerNames?.[provider]
+    return typeof named === 'string' && named.trim() !== '' ? named : provider
+  }, [providerNames])
+
+  const shareText = (n: number): string => (total > 0 ? formatPercent((n / total) * 100) : '—')
 
   const modelRows = useMemo<BreakdownRow[]>(() => {
-    const byName = new Map<string, { tokens: number; cacheHit: number; cacheMiss: number; providers: Set<string> }>()
+    const byName = new Map<string, {
+      tokens: number
+      cacheHit: number
+      cacheMiss: number
+      /** Provider -> tokens, from the host's cross-dimension split. */
+      split: Map<string, number>
+      /** Every provider the host named, split or not. */
+      sources: Set<string>
+    }>()
     for (const m of models) {
       const name = m.model
-      const acc = byName.get(name) ?? { tokens: 0, cacheHit: 0, cacheMiss: 0, providers: new Set<string>() }
+      const acc = byName.get(name) ?? { tokens: 0, cacheHit: 0, cacheMiss: 0, split: new Map<string, number>(), sources: new Set<string>() }
       acc.tokens += m.tokens
       acc.cacheHit += m.cacheHit
       acc.cacheMiss += m.cacheMiss
-      for (const provider of m.providers ?? [m.provider]) acc.providers.add(provider)
+      for (const item of m.providerTokens ?? []) {
+        acc.split.set(item.provider, (acc.split.get(item.provider) ?? 0) + item.tokens)
+      }
+      for (const provider of m.providers ?? (m.provider === '' ? [] : [m.provider])) acc.sources.add(provider)
       byName.set(name, acc)
     }
     return [...byName.entries()]
       .sort((a, b) => b[1].tokens - a[1].tokens)
       .slice(0, TOP_BREAKDOWN)
-      .map(([name, acc], i) => ({
-        key: name,
-        name,
-        detail: acc.providers.size > 1 ? [...acc.providers].join(', ') : undefined,
-        tokens: acc.tokens,
-        cacheHit: acc.cacheHit,
-        cacheMiss: acc.cacheMiss,
-        color: `var(--dsw-chart-${i + 1})`,
-      }))
-  }, [models])
+      .map(([name, acc], i) => {
+        const split: RankChild[] = [...acc.split.entries()]
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([provider, tokens], j) => ({ key: provider, name: providerLabel(provider), tokens, color: providerColor(j) }))
+        // A payload from before the split still names its sources; list them
+        // without a volume rather than inventing a number.
+        const known = new Set(split.map((child) => child.key))
+        const named: RankChild[] = [...acc.sources]
+          .filter((provider) => !known.has(provider))
+          .sort()
+          .map((provider, j) => ({ key: provider, name: providerLabel(provider), tokens: null, color: providerColor(split.length + j) }))
+        return {
+          key: name,
+          name,
+          tokens: acc.tokens,
+          cacheHit: acc.cacheHit,
+          cacheMiss: acc.cacheMiss,
+          color: modelColor(i),
+          breakdownLabel: t('byProvider'),
+          breakdown: [...split, ...named],
+        }
+      })
+  }, [models, providerLabel, t])
 
   const providerRows = useMemo<BreakdownRow[]>(() => {
     return [...providers]
       .filter((p) => p.tokens > 0)
       .sort((a, b) => b.tokens - a.tokens)
       .slice(0, TOP_BREAKDOWN)
-      .map((p, i) => ({
-        key: p.provider,
-        name: p.provider,
-        tokens: p.tokens,
-        cacheHit: p.cacheHit,
-        cacheMiss: p.cacheMiss,
-        color: `var(--dsw-provider-${i + 1})`,
-      }))
-  }, [providers])
-
-  const rows = tab === 'model' ? modelRows : providerRows
-  const share = (n: number): string => (total > 0 ? formatPercent((n / total) * 100) : '—')
+      .map((p, i) => {
+        const label = providerLabel(p.provider)
+        return {
+          key: p.provider,
+          name: label,
+          // Keep the route id reachable: the row shows the display name only.
+          subtitle: label === p.provider ? undefined : p.provider,
+          tokens: p.tokens,
+          cacheHit: p.cacheHit,
+          cacheMiss: p.cacheMiss,
+          color: providerColor(i),
+          breakdownLabel: t('byModel'),
+          breakdown: [...(p.modelTokens ?? [])]
+            .sort((a, b) => b.tokens - a.tokens || a.model.localeCompare(b.model))
+            .map((m, j) => ({ key: m.model, name: m.model, tokens: m.tokens, color: modelColor(j) })),
+        }
+      })
+  }, [providers, providerLabel, t])
 
   return (
     <section className={css.section}>
       <div className={css.sectionHead}>
-        {/* One title for both tabs: the section is ONE ranking, seen through
-            two lenses (by model / by provider), so the heading names the
-            section rather than the current lens. */}
+        {/* One heading for the whole section: both rankings are always on
+            screen, side by side, so there is no lens to switch. */}
         <h3 className={css.sectionTitle}>{t('usageRanking')}</h3>
-        <div className={css.group} role="tablist" aria-label={t('usageRanking')}>
-          <Button size="sm" variant="ghost" role="tab" aria-selected={tab === 'model'} className={clsx(css.segItem, tab === 'model' && css.segActive)} onClick={() => setTab('model')}>
-            {t('byModel')}
-          </Button>
-          <Button size="sm" variant="ghost" role="tab" aria-selected={tab === 'provider'} className={clsx(css.segItem, tab === 'provider' && css.segActive)} onClick={() => setTab('provider')}>
-            {t('byProvider')}
-          </Button>
-        </div>
       </div>
+      <div className={css.rankCards}>
+        <RankCard title={t('byModel')} rows={modelRows} total={total} t={t} onTip={setTip} />
+        <RankCard title={t('byProvider')} rows={providerRows} total={total} t={t} onTip={setTip} />
+      </div>
+      <ChartTip anchor={tip?.anchor ?? null} panelRef={panelRef}>
+        {tip && (
+          <>
+            <div className={css.tipTitle}>{tip.title}</div>
+            {tip.subtitle !== undefined && <div className={css.tipSubtitle}>{tip.subtitle}</div>}
+            <div className={css.tipRow}>{t('total')} {formatTokens(tip.tokens)} · {shareText(tip.tokens)}</div>
+            <div className={css.tipRow}>{t('cacheRateColumn')} {cacheRateText(tip.cacheHit, tip.cacheMiss)}</div>
+            {tip.breakdown.length > 0 && (
+              <div className={css.tipBreakdown}>
+                <div className={css.tipLabel}>{tip.breakdownLabel}</div>
+                {tip.breakdown.map((child) => (
+                  <div key={child.key} className={css.tipRow}>
+                    <i className={css.legendSwatch} style={{ background: child.color }} />
+                    <span className={css.tipName}>{child.name}</span>
+                    <span className={css.tipValue}>
+                      {child.tokens === null ? '' : `${formatCompact(child.tokens)} · ${shareText(child.tokens)}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </ChartTip>
+    </section>
+  )
+}
+
+/** One ranking card: a titled list whose rows explain themselves on hover.
+ *  The tip is owned by UsageBreakdown (one open tip at a time), so a row only
+ *  reports which row it is, never where to draw. */
+function RankCard({ title, rows, total, t, onTip }: {
+  title: string
+  rows: BreakdownRow[]
+  total: number
+  t: Translator
+  onTip: (tip: RankTip | null) => void
+}) {
+  const share = (n: number): string => (total > 0 ? formatPercent((n / total) * 100) : '—')
+  return (
+    <div className={css.rankCard}>
+      <div className={css.rankCardTitle}>{title}</div>
       {rows.length === 0 ? (
         <div className={css.empty}>{t('empty')}</div>
       ) : (
-        <ul className={css.modelList} data-dsh-usage-glass="list">
+        <ul className={css.rankList} data-dsh-usage-glass="list">
           {rows.map((r, rank) => (
-            <li key={r.key} className={css.modelRow}>
+            <li
+              key={r.key}
+              className={css.modelRow}
+              onMouseEnter={(e) => onTip({
+                anchor: e.currentTarget,
+                title: r.name,
+                subtitle: r.subtitle,
+                tokens: r.tokens,
+                cacheHit: r.cacheHit,
+                cacheMiss: r.cacheMiss,
+                breakdownLabel: r.breakdownLabel,
+                breakdown: r.breakdown,
+              })}
+              onMouseLeave={() => onTip(null)}
+            >
               <span className={css.modelRank} aria-hidden="true">{rank + 1}</span>
               <i className={css.legendSwatch} style={{ background: r.color }} />
               <div className={css.modelId}>
                 <span className={css.modelName}>{r.name}</span>
-                <span className={css.modelProvider}>{r.detail ?? share(r.tokens)}</span>
+                {/* The share keeps its own line: the hover detail never
+                    displaces it (悬浮详情不占用百分比的位置). */}
+                <span className={css.modelProvider}>{share(r.tokens)}</span>
               </div>
               <div className={css.modelValues}>
                 <span className={css.modelTokens}>{formatCompact(r.tokens)}</span>
@@ -790,7 +936,7 @@ function UsageBreakdown({ models, providers, total, t }: {
           ))}
         </ul>
       )}
-    </section>
+    </div>
   )
 }
 

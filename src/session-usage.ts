@@ -25,6 +25,7 @@
 
 import type {
   UsageSessionEvent,
+  UsageSessionHandle,
   UsageSessionHeader,
   UsageSessionPersistence,
   UsageSessionSnapshot,
@@ -68,6 +69,10 @@ function headerOf(item: UsageSessionHeader | UsageSessionSnapshot): UsageSession
   return typeof row?.id === 'string' && row.id !== '' ? row : null
 }
 
+function inheritedCount(cut: unknown): number {
+  return typeof cut === 'number' && Number.isSafeInteger(cut) && cut >= 0 ? cut : 0
+}
+
 /** Read one stored session's events through whichever persistence seam the
  *  host line exposes (alpha open/read/close wins; rc.1 inspect is the tail). */
 async function readEvents(
@@ -78,13 +83,12 @@ async function readEvents(
   if (typeof persistence.open === 'function') {
     const handle = await persistence.open(id, 'read', signal === undefined ? undefined : { signal })
     try {
-      const cut = handle.inheritedEventCount
-      const inheritedCut = typeof cut === 'number' && Number.isSafeInteger(cut) && cut >= 0 ? cut : 0
+      const inheritedCut = inheritedCount(handle.inheritedEventCount)
       const collected: UsageSessionEvent[] = []
       let offset = 0
       const PAGE = 500
       for (;;) {
-        if (signal?.aborted) break
+        signal?.throwIfAborted()
         const slice = await handle.read(offset, PAGE, signal === undefined ? undefined : { signal })
         const page = ((slice && slice.events) ? slice.events : []) as readonly UsageSessionEvent[]
         if (page.length === 0) break
@@ -98,7 +102,7 @@ async function readEvents(
   }
   if (typeof persistence.inspect === 'function') {
     const inspection = await persistence.inspect(id, signal)
-    return { events: inspection.events, inheritedCut: inspection.inheritedEventCount ?? 0 }
+    return { events: inspection.events, inheritedCut: inheritedCount(inspection.inheritedEventCount) }
   }
   throw new Error('no readable persistence seam (need open or inspect)')
 }
@@ -108,49 +112,59 @@ async function sumOneSession(
   persistence: UsageSessionPersistence,
   id: string,
   signal?: AbortSignal,
-): Promise<SessionUsageTotals> {
-  const { events, inheritedCut } = await readEvents(persistence, id, signal)
+  live?: UsageSessionHandle,
+): Promise<{ totals: SessionUsageTotals; compaction: SessionUsageTotals }> {
+  signal?.throwIfAborted()
+  const { events, inheritedCut } = typeof live?.snapshotEvents === 'function'
+    && typeof live.inheritedEventCount === 'number'
+    ? { events: live.snapshotEvents(), inheritedCut: inheritedCount(live.inheritedEventCount) }
+    : await readEvents(persistence, id, signal)
   const fold = new UsageFold()
   const totals: SessionUsageTotals = { ...ZERO }
+  const compaction: SessionUsageTotals = { ...ZERO }
   for (const ev of events) {
     if (inheritedCut > 0 && typeof ev.seq === 'number' && ev.seq < inheritedCut) continue
     const sample = fold.fold(ev)
     if (sample === null || sample.turn) continue
-    totals.uncachedInputTokens += sample.inputTokens
-    totals.outputTokens += sample.outputTokens
-    totals.cacheReadTokens += sample.cacheReadTokens
-    totals.cacheWriteTokens += sample.cacheWriteTokens
+    const buckets: SessionUsageTotals = {
+      uncachedInputTokens: sample.inputTokens,
+      outputTokens: sample.outputTokens,
+      cacheReadTokens: sample.cacheReadTokens,
+      cacheWriteTokens: sample.cacheWriteTokens,
+    }
+    add(totals, buckets)
+    if (ev.type === 'compaction/summary') add(compaction, buckets)
   }
-  return totals
+  return { totals, compaction }
 }
 
 export class SessionUsageService {
-  /** Cached trees, each remembering every session id it was built from, so a
-   *  live event on ANY of them (a subagent's own event changes its ancestors'
-   *  totals too) can invalidate exactly the affected trees. */
-  private cache = new Map<string, { at: number; value: SessionUsageTree; members: Set<string> }>()
+  /** Short-lived tree reads; any live event can invalidate tree membership. */
+  private cache = new Map<string, { at: number; value: SessionUsageTree }>()
+  /** Any event can introduce a new descendant while an async read is running. */
+  private generation = 0
 
-  /** Drop every cached tree that counted `sessionId` (its own tree, or any
-   *  ancestor's tree that folded it in as a subagent). Called by the collector
-   *  on each live session event. */
-  invalidate(sessionId: string): void {
-    for (const [rootId, entry] of this.cache) {
-      if (entry.members.has(sessionId)) this.cache.delete(rootId)
-    }
+  /** Invalidate conservatively: an unseen session may be a newly-created child
+   *  of ANY cached root, so membership-only invalidation is not safe. */
+  invalidate(_sessionId: string): void {
+    this.generation++
+    this.cache.clear()
   }
 
   /** Resolve the whole session tree rooted at `rootId` and sum its usage.
    *  `self` is the root's own usage, `subagents` every descendant's, `total`
-   *  the sum. Unknown roots answer zeroed totals rather than throwing: the pill
-   *  must never break the composer. */
+   *  the sum. Unreadable logs reject rather than publishing partial totals;
+   *  callers can retain their last good display while surfacing the error. */
   async tree(
     persistence: UsageSessionPersistence,
     sessions: UsageSessionStore | undefined,
     rootId: string,
     signal?: AbortSignal,
   ): Promise<SessionUsageTree> {
+    signal?.throwIfAborted()
     const hit = this.cache.get(rootId)
     if (hit !== undefined && Date.now() - hit.at < CACHE_TTL_MS) return hit.value
+    const generation = this.generation
 
     const headers = await this.listHeaders(persistence, signal)
     const children = new Map<string, string[]>()
@@ -163,10 +177,10 @@ export class SessionUsageService {
     }
     // A brand-new live subagent may not be materialized in persistence yet;
     // the live store still knows its parent, so fold those in too.
-    for (const handle of sessions?.list() ?? []) {
-      const parent = (handle as { parentSession?: string }).parentSession
+    const live = new Map((sessions?.list() ?? []).map((handle) => [handle.id, handle]))
+    for (const handle of live.values()) {
+      const parent = handle.header?.parentSession ?? handle.parentSession
       if (typeof parent !== 'string' || parent === '' || parent === handle.id) continue
-      if (headers.some((h) => h.id === handle.id)) continue
       const bucket = children.get(parent)
       if (bucket === undefined) children.set(parent, [handle.id])
       else if (!bucket.includes(handle.id)) bucket.push(handle.id)
@@ -185,23 +199,21 @@ export class SessionUsageService {
       }
     }
 
-    const self = await sumOneSession(persistence, rootId, signal).catch(() => ({ ...ZERO }))
+    const root = await sumOneSession(persistence, rootId, signal, live.get(rootId))
+    const self = root.totals
     const subagents: SessionUsageTotals = { ...ZERO }
     for (const id of descendants) {
-      const one = await sumOneSession(persistence, id, signal).catch(() => ({ ...ZERO }))
-      add(subagents, one)
+      const one = await sumOneSession(persistence, id, signal, live.get(id))
+      add(subagents, one.totals)
     }
     const total: SessionUsageTotals = { ...self }
     add(total, subagents)
-    const value: SessionUsageTree = { self, subagents, total, subagentSessions: descendants.length }
+    const value: SessionUsageTree = { self, selfCompaction: root.compaction, subagents, total, subagentSessions: descendants.length }
 
-    if (signal?.aborted !== true) {
+    signal?.throwIfAborted()
+    if (generation === this.generation) {
       if (this.cache.size >= CACHE_MAX) this.cache.clear()
-      this.cache.set(rootId, {
-        at: Date.now(),
-        value,
-        members: new Set([rootId, ...descendants]),
-      })
+      this.cache.set(rootId, { at: Date.now(), value })
     }
     return value
   }

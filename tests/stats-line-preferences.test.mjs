@@ -4,6 +4,7 @@ import { createContext, runInContext } from 'node:vm'
 import { createRequire } from 'node:module'
 import test from 'node:test'
 import * as core from '../src/client/stats-line-core.ts'
+import * as sessionCore from '../src/client/session-usage-core.ts'
 
 const require = createRequire(import.meta.url)
 const ts = require('typescript')
@@ -38,9 +39,9 @@ const loadPills = (saved) => {
     if (name === './stat-dialog.ts') return {
       MEASURE_STYLE: {}, useStatDialog: () => ({ open: true, setOpen: () => {}, pos: {}, rootRef: {}, panelRef: {} }),
     }
+    if (name === './session-usage-core.ts') return sessionCore
     if (name === './use-session-usage.ts') return {
-      billedTotal: usage => core.billedInputTokens(usage) + usage.outputTokens,
-      hasAnyTokens: () => false, useSessionUsage: () => undefined,
+      useSessionUsage: () => ({ tree: null, totals: null }),
     }
     if (name.endsWith('.module.css')) return new Proxy({}, { get: (_, key) => key })
     assert.fail(`unexpected runtime dependency: ${name}`)
@@ -79,6 +80,30 @@ test('session breakdown and live speed stay enabled for legacy false/true settin
   }
 })
 
+test('usage pill and every dialog bucket share live main + descendants in both layouts', () => {
+  const pills = loadPills({})
+  const subagents = { uncachedInputTokens: 100, outputTokens: 200, cacheReadTokens: 300, cacheWriteTokens: 400 }
+  const staleSelf = { uncachedInputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 }
+  const tree = { tree: { self: staleSelf, subagents, total: sessionCore.combinedTotals({ self: staleSelf, subagents }), subagentSessions: 12 } }
+  for (const dock of [false, true]) {
+    const nodes = flatten(pills.UsagePill({ usage, tree, t, dock }))
+    const total = sessionCore.billedTotal(usage) + sessionCore.billedTotal(subagents)
+    const button = nodes.find(node => node.type === 'button')
+    assert.ok(button.props['aria-label'].includes(`"count":"${core.formatTokensCompact(total)}"`))
+    const detail = key => {
+      const index = nodes.findIndex(node => node.type === 'dt' && node.props.children === key)
+      assert.ok(index >= 0, `missing ${key}`)
+      return nodes[index + 1].props.children
+    }
+    assert.equal(detail('stats.dialog.main'), 'message.turnUsage.count:{"count":"134"}')
+    assert.equal(detail('stats.dialog.treeTotal'), `message.turnUsage.count:{"count":"${total}"}`)
+    assert.equal(detail('message.turnUsage.input'), 'message.turnUsage.count:{"count":"110"}')
+    assert.equal(detail('message.turnUsage.cacheRead'), 'message.turnUsage.count:{"count":"320"}')
+    assert.equal(detail('message.turnUsage.cacheWrite'), 'message.turnUsage.count:{"count":"405"}')
+    assert.equal(detail('message.turnUsage.output'), 'message.turnUsage.count:{"count":"299"}')
+  }
+})
+
 test('cache precision always formats two decimals including full hits', () => {
   const usage = (miss, hit) => ({ uncachedInputTokens: miss, cacheReadTokens: hit, cacheWriteTokens: 0, outputTokens: 99 })
   assert.equal(core.cacheHitPercentPrecise(usage(1, 2)), '66.67')
@@ -110,7 +135,7 @@ test('both composer layouts have no preference gates; panel has no enhancement o
   assert.doesNotMatch(locales, /cachePrecision|tokenDetail|streamThroughput|rebuildConfirm|rebuilding/)
   assert.doesNotMatch(css, /\.prefGroup|\.prefRow|\.switchTrack|\.switchThumb/)
   assert.match(panel, /const name = m\.model/)
-  assert.match(panel, /m\.providers \?\? \[m\.provider\]/)
+  assert.match(panel, /m\.providers \?\? \(m\.provider === '' \? \[\] : \[m\.provider\]\)/)
   assert.match(panel, /useState(?:<string>)?\('today'\)/)
   assert.match(panel, /t\('usageRanking'\)/)
 })

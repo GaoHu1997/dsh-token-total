@@ -123,6 +123,12 @@ export function aggregateSamples(
   // tracked alongside the token volume.
   const modelCache = new Map<string, { hit: number; miss: number }>()
   const providerCache = new Map<string, { hit: number; miss: number }>()
+  // Cross-dimension splits: the two ranked lists render as side-by-side cards
+  // whose rows explain themselves on hover (which providers served this model,
+  // which models this provider served), so both directions are tracked here
+  // in the same pass rather than by re-walking the samples per row.
+  const modelProviderTotals = new Map<string, Map<string, number>>()
+  const providerModelTotals = new Map<string, Map<string, number>>()
   const active = new Set<string>()
   // Per-bucket accumulation (the reasonix dayTotals): the stacked trend chart
   // reads the bucket's byModel / byProvider, so every token-bearing sample
@@ -178,6 +184,18 @@ export function aggregateSamples(
     modelProviders.set(model, sources)
     modelTotals.set(model, (modelTotals.get(model) ?? 0) + total)
     providerTotals.set(provider, (providerTotals.get(provider) ?? 0) + total)
+    let modelSplitMap = modelProviderTotals.get(model)
+    if (!modelSplitMap) {
+      modelSplitMap = new Map()
+      modelProviderTotals.set(model, modelSplitMap)
+    }
+    modelSplitMap.set(provider, (modelSplitMap.get(provider) ?? 0) + total)
+    let providerSplitMap = providerModelTotals.get(provider)
+    if (!providerSplitMap) {
+      providerSplitMap = new Map()
+      providerModelTotals.set(provider, providerSplitMap)
+    }
+    providerSplitMap.set(model, (providerSplitMap.get(model) ?? 0) + total)
     const mc = modelCache.get(model) ?? { hit: 0, miss: 0 }
     mc.hit += sample.cacheReadTokens
     mc.miss += missSide
@@ -228,8 +246,8 @@ export function aggregateSamples(
     })
   }
 
-  out.models = modelsSorted(modelTotals, modelCache, modelProviders)
-  out.providers = providersSorted(providerTotals, providerCache)
+  out.models = modelsSorted(modelTotals, modelCache, modelProviders, modelProviderTotals)
+  out.providers = providersSorted(providerTotals, providerCache, providerModelTotals)
   out.topModel = out.models[0]?.model ?? ''
   out.topProvider = out.providers[0]?.provider ?? ''
   if (out.tokens > 0) {
@@ -243,23 +261,61 @@ function modelsSorted(
   totals: Map<string, number>,
   cache: Map<string, { hit: number; miss: number }>,
   sources: Map<string, Set<string>>,
+  splits: Map<string, Map<string, number>>,
 ): ModelTokenUsage[] {
   const out: ModelTokenUsage[] = []
   for (const [model, tokens] of totals) {
     const c = cache.get(model)
     const providers = [...(sources.get(model) ?? [])].sort()
-    out.push({ model, provider: providers.length === 1 ? providers[0]! : '', providers, tokens, percent: 0, cacheHit: c?.hit ?? 0, cacheMiss: c?.miss ?? 0 })
+    out.push({
+      model,
+      provider: providers.length === 1 ? providers[0]! : '',
+      providers,
+      providerTokens: providerSplit(splits.get(model)),
+      tokens,
+      percent: 0,
+      cacheHit: c?.hit ?? 0,
+      cacheMiss: c?.miss ?? 0,
+    })
   }
   out.sort((a, b) => b.tokens - a.tokens || a.model.localeCompare(b.model))
   return out
 }
 
-function providersSorted(totals: Map<string, number>, cache: Map<string, { hit: number; miss: number }>): ProviderTokenUsage[] {
+function providersSorted(
+  totals: Map<string, number>,
+  cache: Map<string, { hit: number; miss: number }>,
+  splits: Map<string, Map<string, number>>,
+): ProviderTokenUsage[] {
   const out: ProviderTokenUsage[] = []
   for (const [provider, tokens] of totals) {
     const c = cache.get(provider)
-    out.push({ provider, tokens, percent: 0, cacheHit: c?.hit ?? 0, cacheMiss: c?.miss ?? 0 })
+    out.push({
+      provider,
+      tokens,
+      percent: 0,
+      cacheHit: c?.hit ?? 0,
+      cacheMiss: c?.miss ?? 0,
+      modelTokens: modelSplit(splits.get(provider)),
+    })
   }
   out.sort((a, b) => b.tokens - a.tokens)
   return out
+}
+
+/** One model's per-provider split, largest first (ties by id for a stable
+ *  order across refreshes). Empty when the response carries no cross data. */
+function providerSplit(split: Map<string, number> | undefined): Array<{ provider: string; tokens: number }> {
+  if (split === undefined) return []
+  return [...split]
+    .map(([provider, tokens]) => ({ provider, tokens }))
+    .sort((a, b) => b.tokens - a.tokens || a.provider.localeCompare(b.provider))
+}
+
+/** One provider's per-model split, largest first (ties by name). */
+function modelSplit(split: Map<string, number> | undefined): Array<{ model: string; tokens: number }> {
+  if (split === undefined) return []
+  return [...split]
+    .map(([model, tokens]) => ({ model, tokens }))
+    .sort((a, b) => b.tokens - a.tokens || a.model.localeCompare(b.model))
 }

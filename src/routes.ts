@@ -12,7 +12,7 @@
  */
 
 import type { Context, UsageLlmService } from './context-types.ts'
-import { resolveModelNames } from './model-names.ts'
+import { resolveModelNames, resolveProviderNames } from './model-names.ts'
 import type { UsageHttpRequest, UsageHttpResponse, UsageWebRoute } from './context-types.ts'
 import type { UsageStore, UsageDayRow, UsageHourRow } from './store.ts'
 import type { UsageCollector } from './collector.ts'
@@ -167,7 +167,19 @@ export async function aggregateRange(
       }
     }
   })()
-  return aggregateSamples(samples, { from, to }, granularity)
+  const stats = aggregateSamples(samples, { from, to }, granularity)
+  // Provider labels ride along with the aggregate: the ranked provider card
+  // shows the selector's display name, and the hover detail names the models
+  // underneath it. Only providers actually present in the range are included,
+  // so the payload stays proportional to the ranking it decorates.
+  const resolved = resolveProviderNames(llm)
+  const providerNames: Record<string, string> = Object.create(null)
+  for (const provider of stats.providers) {
+    const label = resolved[provider.provider]
+    if (label !== undefined) providerNames[provider.provider] = label
+  }
+  if (Object.keys(providerNames).length > 0) stats.providerNames = providerNames
+  return stats
 }
 
 /** Build the single fenced prefix route serving the /token-total/api JSON RPC.

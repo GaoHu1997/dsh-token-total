@@ -3,10 +3,10 @@
  * Two sources feed the same fold:
  *
  * - live: `session/event` subscription — every committed session event
- *   reaches this plugin after the fact. `assistant/message` carries the
- *   step's final `usage` (TokenUsage); `assistant/chunk` carries an early
- *   `usage` sample from the streaming adapter; `request/context` carries the
- *   provider/model route. A completed call's usage is attributed to the model
+ *   reaches this plugin after the fact. Assistant messages expose final usage,
+ *   and modern message/attempt streams retain raw usage even on failed calls.
+ *   Legacy `assistant/chunk` reports an early sample; `request/context` carries
+ *   the provider/model route. A completed call's usage is attributed to the model
  *   the request used — in priority order: the message's own `source`
  *   (authoritative per call), then the session's last-known route, which
  *   comes from observed `request/context` events OR is lazily seeded from
@@ -27,11 +27,10 @@
  *   >= 0.1.2-rc.1, 0 for a non-forked session), and the replay skips it —
  *   the parent's own backfill already counted those events.
  *
- * Idempotence: within ONE session, the same (turn, step) may report usage
- * more than once (a streaming sample then the final assistant/message;
- * compaction replays). The fold emits each (turn, step) key exactly once and
- * keeps the newest values in its own state — see the replaceSample note for
- * why the store observably keeps the FIRST emission. Cross-session
+ * Idempotence: within ONE session, repeated reports for the same (turn, step)
+ * emit only signed bucket corrections: the accumulated usage is last-wins.
+ * A started retry closes that replacement slot because its predecessor was a
+ * separately billed attempt. Cross-session
  * (turn, step) collisions are NOT deduped: two sessions both own a turn 1 /
  * step 1, and each must count. The store's per-day rows accumulate, so
  * re-folding the same log must not add twice: live events are only folded
@@ -51,6 +50,8 @@ interface UsageEventData {
   turn?: number
   step?: number
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; reasoningTokens?: number }
+  /** v2+ durable Assistant stream: usage is a raw (never packed) chunk. */
+  stream?: readonly { type?: string; chunk?: { type?: string; usage?: UsageEventData['usage'] } }[]
 }
 
 /** The assistant/message payload. */
@@ -170,6 +171,11 @@ export class UsageFold {
       // reasonix emits TurnDone regardless of the run's error.
       return { day: dayKey(ev.time), hour: hourKey(ev.time), inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turn: true }
     }
+    if (ev.type === 'llm/retry-started') {
+      // A retry is a separate billed attempt even though it shares turn/step.
+      const key = this.keyOf(ev)
+      if (key !== null) this.seen.delete(key)
+    }
     if (ev.type === 'step/start' || ev.type === 'llm/retry-started') {
       // Attribution note: agent-loop appends step/start BEFORE request/context
       // (core/agent-loop agent.ts), so the FIRST request marker of a fresh —
@@ -194,17 +200,26 @@ export class UsageFold {
         request: true,
       }
     }
-    // `assistant/chunk` only exists on DSH <= 0.1.2 (streaming usage sample);
-    // 0.1.3+ logs attempts as `assistant/attempt` (no usage) and the final
-    // `assistant/message` stays authoritative. Kept as a dead branch for rc.1.
+    // Legacy streaming event. Modern hosts commit the complete stream on an
+    // assistant/message OR assistant/attempt, including failed/aborted calls.
     if (ev.type === 'assistant/chunk') {
       const data = ev.data as AssistantChunkData
       const usage = data.chunk?.type === 'usage' ? data.chunk.usage : undefined
       return usage ? this.replaceSample(ev, usage) : null
     }
-    if (ev.type === 'assistant/message') {
+    if (ev.type === 'assistant/message' || ev.type === 'assistant/attempt') {
       const data = ev.data as AssistantMessageData
-      return data.usage ? this.replaceSample(ev, data.usage) : null
+      let usage = ev.type === 'assistant/message' ? data.usage : undefined
+      if (usage === undefined && Array.isArray(data.stream)) {
+        for (let i = data.stream.length - 1; i >= 0; i--) {
+          const record = data.stream[i]
+          if (record?.type === 'chunk' && record.chunk?.type === 'usage') {
+            usage = record.chunk.usage
+            break
+          }
+        }
+      }
+      return usage ? this.replaceSample(ev, usage) : null
     }
     if (ev.type === 'compaction/summary') return this.compactionSample(ev)
     return null
@@ -213,53 +228,44 @@ export class UsageFold {
   private replaceSample(ev: UsageSessionEvent, usage: UsageEventData['usage']): UsageSample | null {
     const usage2 = usage
     if (!usage2) return null
-    // A sample with nothing at all is noise; a pure-cache call (zero
-    // uncached input AND zero output but real cache traffic) still counts —
-    // its cacheRead/cacheWrite buckets are real provider-reported tokens.
-    if (
-      (usage2.inputTokens ?? 0)
-      + (usage2.outputTokens ?? 0)
-      + (usage2.cacheReadTokens ?? 0)
-      + (usage2.cacheWriteTokens ?? 0)
-      <= 0
-    ) {
-      return null
-    }
     const key = this.keyOf(ev)
     const sample: UsageSample = {
       day: dayKey(ev.time),
       hour: hourKey(ev.time),
-      inputTokens: usage2.inputTokens,
-      outputTokens: usage2.outputTokens,
+      inputTokens: usage2.inputTokens ?? 0,
+      outputTokens: usage2.outputTokens ?? 0,
       cacheReadTokens: usage2.cacheReadTokens ?? 0,
       cacheWriteTokens: usage2.cacheWriteTokens ?? 0,
     }
-    if (key === null) {
-      // No (turn, step) marker: every emission counts (no dedupe slot). The
-      // shipped adapters always stamp both on usage events, so this path is
-      // a defensive tail, not a live double-count source. ponytail: a
-      // synthetic key (e.g. by time+usage hash) could dedupe it if an
-      // adapter ever reports usage without turn/step.
-      return sample
-    }
-    const prev = this.seen.get(key)
-    // Track the newest report internally either way; the fold must NEVER
-    // mutate an object the store already received.
+    const prev = key === null ? undefined : this.seen.get(key)
+    // A first all-zero report carries no traffic. A later zero report may
+    // replace a nonzero sample, so it must emit a negative correction.
+    if (!prev && sample.inputTokens + sample.outputTokens + sample.cacheReadTokens + sample.cacheWriteTokens <= 0) return null
+    if (key === null) return sample
     this.seen.set(key, sample)
     if (prev) {
-      // Duplicate report for a known (turn, step): swallow it. The shipped
-      // adapters emit the identical TokenUsage on the streaming chunk and
-      // the final message (llm-deepseek yields one `pendingUsage` at DONE;
-      // llm-pi-ai only on done/error), so first == last observationally.
-      // ponytail: true last-wins would need store-side delta corrections
-      // keyed by (session, turn, step); add them only if an adapter ever
-      // reports differing values for one call.
-      return null
+      const correction: UsageSample = {
+        day: prev.day,
+        hour: prev.hour,
+        model: prev.model,
+        inputTokens: sample.inputTokens - prev.inputTokens,
+        outputTokens: sample.outputTokens - prev.outputTokens,
+        cacheReadTokens: sample.cacheReadTokens - prev.cacheReadTokens,
+        cacheWriteTokens: sample.cacheWriteTokens - prev.cacheWriteTokens,
+      }
+      // Keep the original bucket identity across cumulative samples.
+      sample.day = prev.day
+      sample.hour = prev.hour
+      sample.model = prev.model
+      if (correction.inputTokens === 0 && correction.outputTokens === 0 && correction.cacheReadTokens === 0 && correction.cacheWriteTokens === 0) return null
+      return correction
     }
-    // First emission: hand the store its own copy. The internal object stays
-    // fold-owned — mutating it on a later duplicate would rewrite the sample
-    // already sitting in the store's write path through the shared reference.
-    return { ...sample }
+    // The collector fills in model attribution on this returned copy. Retain
+    // the same identity privately for any correction, without ever mutating
+    // a sample already handed to the store.
+    const emitted = { ...sample }
+    this.seen.set(key, emitted)
+    return emitted
   }
 
   /**

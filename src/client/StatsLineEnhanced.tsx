@@ -55,10 +55,8 @@ import {
   type ConversationNodeLike, type PartialAssistantLike, type UseProjection, type WindowStats,
 } from './stats-line-core.ts'
 import { formatTokens } from './format.ts'
-import {
-  billedTotal, hasAnyTokens, useSessionUsage,
-  type SessionTreeReading,
-} from './use-session-usage.ts'
+import { useSessionUsage, type SessionTreeReading } from './use-session-usage.ts'
+import { billedTotal, hasAnyTokens, sessionUsageForDisplay } from './session-usage-core.ts'
 import type { SessionUsageTotals } from '../wire.ts'
 import css from './StatsLineEnhanced.module.css'
 
@@ -363,10 +361,8 @@ function TimePill({ stats, t, dialog, useChat, scale, dock }: {
 }
 
 function UsagePill({ usage, tree, t, dialog, dock }: {
-  usage: Parameters<typeof billedInputTokens>[0]
-  /** The whole session tree (main + subagents) from the host, when it has
-   *  answered. Subagent spend is invisible to the native projection, so the
-   *  pill's total and its dialog both switch to this once it carries any. */
+  usage: Parameters<typeof billedInputTokens>[0] | undefined
+  /** Descendant spend from the host; the main-agent figure stays live. */
   tree?: SessionTreeReading
   t: T
   /** The row's shared exclusive slot; omitted by a split-mode entry. */
@@ -375,20 +371,10 @@ function UsagePill({ usage, tree, t, dialog, dock }: {
   dock: boolean
 }) {
   const { open, setOpen, rootRef, panelRef, pos } = useStatDialog(dialog)
-  // The native projection is the main agent of THIS session; the tree adds
-  // every subagent session delegated from it. Prefer the tree as soon as it
-  // reports any subagent spend — otherwise the two are identical and the
-  // native figure (which is live to the frame) stays authoritative.
-  const nativeTotals: SessionUsageTotals = {
-    uncachedInputTokens: usage.uncachedInputTokens,
-    outputTokens: usage.outputTokens,
-    cacheReadTokens: usage.cacheReadTokens,
-    cacheWriteTokens: usage.cacheWriteTokens,
-  }
-  const treeTotals = tree?.totals ?? null
-  const subagentTotals = tree?.tree?.subagents
-  const showSubagents = subagentTotals !== undefined && hasAnyTokens(subagentTotals)
-  const billed = showSubagents && treeTotals !== null ? treeTotals : nativeTotals
+  const display = sessionUsageForDisplay(usage, tree?.tree ?? null)
+  const subagentTotals = display.subagents
+  const showSubagents = display.subagentSessions > 0
+  const billed = display.total
   // Same aggregate as the official pill total: every prompt-side billing bucket plus output.
   const total = billedTotal(billed)
   const totalText = t('message.turnUsage.count', { count: formatTokensCompact(total) })
@@ -461,10 +447,10 @@ function UsagePill({ usage, tree, t, dialog, dock }: {
             <dd>{exactCount(billed.outputTokens)}</dd>
             {/* The split that the native figure cannot show: this session's own
                 main agent against every subagent it delegated to. */}
-            {showSubagents && treeTotals !== null && (
+            {showSubagents && (
               <>
                 <dt>{t('stats.dialog.main')}</dt>
-                <dd>{exactCount(billedTotal(nativeTotals))}</dd>
+                <dd>{exactCount(billedTotal(display.self))}</dd>
                 <dt>{t('stats.dialog.subagents')}</dt>
                 <dd>
                   {exactCount(billedTotal(subagentTotals))}
@@ -472,7 +458,7 @@ function UsagePill({ usage, tree, t, dialog, dock }: {
                   {t('stats.dialog.subagentCount', { count: tree?.tree?.subagentSessions ?? 0 })}
                 </dd>
                 <dt>{t('stats.dialog.treeTotal')}</dt>
-                <dd>{exactCount(billedTotal(treeTotals))}</dd>
+                <dd>{exactCount(billedTotal(billed))}</dd>
               </>
             )}
           </dl>
@@ -506,13 +492,10 @@ export const StatsLineEnhanced = memo(function StatsLineEnhanced(
   // density predicted for the same text. 1 (the raw prior) until a settled step
   // carries both, so the first stream of a session still reads sensibly.
   const tokenScale = useMemo(() => measuredTokenScale(settledNodes ?? []) ?? 1, [settledNodes])
-  // The whole session tree (main + subagents). Re-asked whenever the native
-  // usage figure moves, which is exactly when a main-agent call settled.
+  // Refresh on main-agent settlements and poll for child-only activity.
   const tree = useSessionUsage(sessionId, usageSignature(usage, stats.steps))
-  // Gated on actual token activity: a session whose steps all settled without
-  // billing (e.g. every request failed) shows its counts without a usage pill.
-  const hasTokens = usage !== undefined
-    && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)
+  // A delegated-only session must still show its usage pill.
+  const hasTokens = hasAnyTokens(sessionUsageForDisplay(usage, tree.tree).total)
   if (stats.steps === 0 && !hasTokens) return null
   // data-composer-stats: through host 0.1.6-alpha.1 InputBar tightened the
   // composer bottom clearance while this row rendered (the official pills'
@@ -585,8 +568,7 @@ export const StatsUsageEntry = memo(function StatsUsageEntry(
 ) {
   const usage = useProjection('tokenUsage')
   const tree = useSessionUsage(sessionId, usageSignature(usage, usage === undefined ? 0 : 1))
-  const hasTokens = usage !== undefined
-    && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)
+  const hasTokens = hasAnyTokens(sessionUsageForDisplay(usage, tree.tree).total)
   if (!hasTokens) return null
   return (
     <UsagePill
