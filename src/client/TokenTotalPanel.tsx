@@ -282,7 +282,7 @@ export function TokenTotalPanel({ t }: { t: Translator }): JSX.Element {
  *  (zero input/output but real cache hits) or a failed-call day (requests
  *  but no tokens) both carry real usage and must not read as "no data". */
 function isEmptyRange(stats: TokenTotalRange): boolean {
-  return stats.tokens === 0 && stats.cacheHit === 0 && stats.requests === 0 && stats.turns === 0
+  return stats.tokens === 0 && stats.cacheHit === 0 && stats.requests === 0 && stats.failures === 0 && stats.turns === 0
 }
 
 function StatCards({ stats, t }: { stats: TokenTotalRange; t: Translator }) {
@@ -299,8 +299,10 @@ function StatCards({ stats, t }: { stats: TokenTotalRange; t: Translator }) {
     { icon: Database, label: t('cacheTokens'), value: formatCompact(stats.cacheTokens), sub: `${formatTokens(stats.cacheTokens)} ${t('tokensUnit')}` },
     // 缓存命中率 —cached share of all prompt tokens in the range.
     { icon: Activity, label: t('cacheRate'), value: cacheRateText(stats.cacheHit, stats.cacheMiss), hint: t('cacheRateHint'), sub: `${formatCompact(stats.cacheHit)} ${t('cachedTokens')}` },
-    // 请求数量 —provider calls (tokens or not).
-    { icon: MessagesSquare, label: t('requests'), value: String(stats.requests) },
+    // 请求数量 —provider calls (tokens or not). The failed share sits
+    // underneath, and only when there were any: a healthy range stays a
+    // single line. Failed calls are a SUBSET of requests, never additive.
+    { icon: MessagesSquare, label: t('requests'), value: String(stats.requests), sub: stats.failures > 0 ? `${t('requestsFailed')} ${stats.failures} · ${formatPercent((stats.failures / Math.max(stats.requests, 1)) * 100)}` : undefined },
   ]
   return (
     <div className={css.cards}>

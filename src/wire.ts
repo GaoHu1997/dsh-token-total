@@ -19,6 +19,7 @@ export interface DailyTokenUsage {
   byModel: Record<string, number> // normalized display name -> tokens
   byProvider: Record<string, number> // provider name -> tokens
   requests: number // usage events (API calls)
+  failures: number // failed calls in the bucket (subset of requests)
   turns: number // completed turns
   cacheHit: number // cached input tokens in the bucket
   cacheMiss: number // uncached input tokens in the bucket
@@ -70,6 +71,12 @@ export interface TokenTotalRange {
   /** Cached prompt tokens: cache reads + cache writes (the cache bucket of `tokens`). */
   cacheTokens: number
   requests: number // usage events (API calls)
+  /** Provider calls in the range that FAILED: the stream ended with an error
+   *  or the call was cancelled before any content was committed. A subset of
+   *  `requests` (a failed call was still one call), and — like `requests` —
+   *  independent of the token buckets: a stream that died mid-flight may
+   *  still have reported usage. */
+  failures: number
   turns: number // completed turns
   cacheHit: number
   cacheMiss: number

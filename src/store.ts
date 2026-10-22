@@ -34,6 +34,11 @@ export interface UsageCounters {
   cacheReadTokens: number
   cacheWriteTokens: number
   requests: number // usage events (API calls) in the bucket
+  /** Provider calls in the bucket that FAILED (error / cancelled before any
+   *  content): a subset of `requests`, never larger than it. Rows persisted
+   *  before the counter existed may lack it; the schema normalizes that to 0
+   *  and every subsequent fold writes the number back. */
+  failures: number
   turns: number // completed turns attributed to this model in the bucket
   lastSeen: number // epoch ms of the newest sample
 }
@@ -57,6 +62,10 @@ export const usageDayRowSchema = z.object({
   cacheReadTokens: z.number(),
   cacheWriteTokens: z.number(),
   requests: z.number(),
+  // Optional: rows persisted before the failure counter existed must stay
+  // readable (the domain format has no migration path, and bumping its
+  // version would reject every existing store). A missing value folds as 0.
+  failures: z.number().default(0),
   turns: z.number(),
   lastSeen: z.number(),
 })
@@ -70,6 +79,7 @@ export const usageHourRowSchema = z.object({
   cacheReadTokens: z.number(),
   cacheWriteTokens: z.number(),
   requests: z.number(),
+  failures: z.number().default(0),
   turns: z.number(),
   lastSeen: z.number(),
 })
@@ -101,12 +111,21 @@ export const usageHistoryDomain = defineDomain({
       hoursBackfilledSessions: z.array(z.string()).optional(),
       hoursLiveFirstSeq: z.record(z.string(), z.number()).optional(),
       hoursReady: z.boolean().optional(),
+      // The FAILURE counter arrived after both token cursors were populated,
+      // so it needs its own pair too: replaying through the day/hour cursors
+      // to recover historic failures would re-add every token. This pass only
+      // writes the failed-call counts.
+      failuresBackfilledSessions: z.array(z.string()).optional(),
+      failuresLiveFirstSeq: z.record(z.string(), z.number()).optional(),
+      failuresReady: z.boolean().optional(),
     }),
     initial: {
       backfilledSessions: [] as string[],
       liveFirstSeq: {},
       hoursBackfilledSessions: [] as string[],
       hoursLiveFirstSeq: {},
+      failuresBackfilledSessions: [] as string[],
+      failuresLiveFirstSeq: {},
     },
   },
   // Two tables, one domain version: storage-domain builds an empty map for a
@@ -137,6 +156,9 @@ interface UsageCursor {
   hoursBackfilledSessions?: string[]
   hoursLiveFirstSeq?: Record<string, number>
   hoursReady?: boolean
+  failuresBackfilledSessions?: string[]
+  failuresLiveFirstSeq?: Record<string, number>
+  failuresReady?: boolean
 }
 
 export class UsageStore {
@@ -375,6 +397,93 @@ export class UsageStore {
     return write
   }
 
+  /** Session ids already replayed into the FAILURE counter (third cursor
+   *  pair, same reason as the hour pair: the day and hour cursors were
+   *  already full when the counter arrived). */
+  async failuresSeenSessions(): Promise<Set<string>> {
+    await this.ready
+    return new Set(this.cursor()?.failuresBackfilledSessions ?? [])
+  }
+
+  /** Per-session seq of the first LIVE-observed event, failure-counter share. */
+  async failuresLiveSequences(): Promise<Map<string, number>> {
+    await this.ready
+    return new Map(Object.entries(this.cursor()?.failuresLiveFirstSeq ?? {}))
+  }
+
+  /** Persist failure-pass replay progress (merges; serialized on the same
+   *  chain as every other cursor write). */
+  async markFailuresSeenSessions(ids: Iterable<string>): Promise<void> {
+    const write = this.markChain.then(async () => {
+      await this.ready
+      const value = this.requireCursor()
+      const seen = new Set(value.failuresBackfilledSessions ?? [])
+      for (const id of ids) seen.add(id)
+      await this.domainHandle?.global?.set({
+        ...value,
+        backfilledSessions: value.backfilledSessions ?? [],
+        failuresBackfilledSessions: [...seen],
+      })
+    })
+    this.markChain = write.then(
+      () => undefined,
+      () => undefined,
+    )
+    return write
+  }
+
+  /** Record the failure-pass live boundary per session (earliest wins). */
+  async markFailuresLiveSequences(entries: Iterable<readonly [string, number]>): Promise<void> {
+    const write = this.markChain.then(async () => {
+      await this.ready
+      const value = this.requireCursor()
+      const merged: Record<string, number> = { ...(value.failuresLiveFirstSeq ?? {}) }
+      let changed = false
+      for (const [id, seq] of entries) {
+        const prev = merged[id]
+        if (prev === undefined || seq < prev) {
+          merged[id] = seq
+          changed = true
+        }
+      }
+      if (!changed) return
+      await this.domainHandle?.global?.set({
+        ...value,
+        backfilledSessions: value.backfilledSessions ?? [],
+        failuresLiveFirstSeq: merged,
+      })
+    })
+    this.markChain = write.then(
+      () => undefined,
+      () => undefined,
+    )
+    return write
+  }
+
+  /** Whether the failure counter covers every replayable session. */
+  async failuresReady(): Promise<boolean> {
+    await this.ready
+    return this.cursor()?.failuresReady === true
+  }
+
+  /** Mark the failure history complete; the upgrade pass then never reruns. */
+  async markFailuresReady(): Promise<void> {
+    const write = this.markChain.then(async () => {
+      await this.ready
+      const value = this.requireCursor()
+      await this.domainHandle?.global?.set({
+        ...value,
+        backfilledSessions: value.backfilledSessions ?? [],
+        failuresReady: true,
+      })
+    })
+    this.markChain = write.then(
+      () => undefined,
+      () => undefined,
+    )
+    return write
+  }
+
   /** Drop every row and the whole cursor, re-bounding each named session at
    *  its WIPE-TIME WATERMARK (the store-rebuild escape hatch for corrupted
    *  history or attribution-logic upgrades).
@@ -415,6 +524,12 @@ export class UsageStore {
         hoursBackfilledSessions: [],
         hoursLiveFirstSeq: { ...liveFirstSeq },
         hoursReady: false,
+        // The failure pass resets with the others (this object replaces the
+        // global wholesale): its cursor must start empty and its boundary
+        // must equal the day boundary for the same reason.
+        failuresBackfilledSessions: [],
+        failuresLiveFirstSeq: { ...liveFirstSeq },
+        failuresReady: false,
       })
       for (const key of [...table.keys()]) await table.delete(key)
       for (const key of [...hourTable.keys()]) await hourTable.delete(key)
@@ -488,6 +603,23 @@ export class UsageStore {
       emptyHourRow(hour, target.provider, target.model),
       sample,
     )
+  }
+
+  /** Fold ONLY the failure count of a sample into the day and hour rows. The
+   *  failure upgrade pass uses this: its replay walks logs the token passes
+   *  already consumed, so the tokens and the request marker must not be added
+   *  a second time — only the failed-call counter may move. */
+  async recordFailure(sample: UsageSample): Promise<void> {
+    await this.record({
+      day: sample.day,
+      hour: sample.hour,
+      model: sample.model,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      failed: true,
+    })
   }
 
   /** The row identity a sample lands on: turn markers use the synthetic
@@ -578,6 +710,7 @@ function emptyCounters(provider: string, model: string): UsageCounters {
     cacheReadTokens: 0,
     cacheWriteTokens: 0,
     requests: 0,
+    failures: 0,
     turns: 0,
     lastSeen: Date.now(),
   }
@@ -597,6 +730,9 @@ function accumulate<T extends UsageCounters>(base: T, sample: UsageSample): T {
   return {
     ...base,
     requests: base.requests + (sample.request ? 1 : 0),
+    // `failures` is missing on rows persisted before the counter existed;
+    // fold it as 0 and write the number back so the pass converges to it.
+    failures: (base.failures ?? 0) + (sample.failed ? 1 : 0),
     inputTokens: base.inputTokens + sample.inputTokens,
     outputTokens: base.outputTokens + sample.outputTokens,
     cacheReadTokens: base.cacheReadTokens + sample.cacheReadTokens,

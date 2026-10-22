@@ -32,6 +32,7 @@ export type TokenTotalKey =
   | 'cachedTokens'
   | 'sessions'
   | 'requests'
+  | 'requestsFailed'
   | 'activeDays'
   | 'cacheRate'
   | 'cacheRateHint'
@@ -100,6 +101,7 @@ export const en: Record<TokenTotalKey, string> = {
   cachedTokens: 'cached',
   sessions: 'Sessions',
   requests: 'Requests',
+  requestsFailed: 'Failed',
   activeDays: 'Active days',
   cacheRate: 'Avg cache hit rate',
   cacheRateHint: 'Cached input tokens as a share of all input tokens in the range',
@@ -169,6 +171,7 @@ export const zh: Record<TokenTotalKey, string> = {
   cachedTokens: '缓存命中',
   sessions: '会话数量',
   requests: '请求数量',
+  requestsFailed: '失败',
   activeDays: '活跃天数',
   cacheRate: '缓存命中率',
   cacheRateHint: '时间段内缓存命中 token 占输入 token 的比例',
@@ -238,6 +241,7 @@ export const zhTW: Record<TokenTotalKey, string> = {
   cachedTokens: '快取命中',
   sessions: '會話數量',
   requests: '請求數量',
+  requestsFailed: '失敗',
   activeDays: '活躍天數',
   cacheRate: '快取命中率',
   cacheRateHint: '時間範圍內快取命中 token 佔輸入 token 的比例',

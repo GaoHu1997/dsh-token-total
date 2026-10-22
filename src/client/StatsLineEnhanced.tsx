@@ -297,7 +297,7 @@ function TimePill({ stats, t, dialog, useChat, scale, dock }: {
     )
   }
   return (
-    <span ref={rootRef} className={anchorClass(dock)}>
+    <span ref={rootRef} className={anchorClass(dock)} data-dsh-token-total-stat>
       <button
         type="button"
         className={css.pill}
@@ -383,7 +383,7 @@ function UsagePill({ usage, tree, t, dialog, dock }: {
   const exactCount = (value: number): string =>
     t('message.turnUsage.count', { count: formatTokens(value) })
   return (
-    <span ref={rootRef} className={anchorClass(dock)}>
+    <span ref={rootRef} className={anchorClass(dock)} data-dsh-token-total-stat>
       <button
         type="button"
         className={css.pill}

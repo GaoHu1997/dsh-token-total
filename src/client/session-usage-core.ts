@@ -8,8 +8,7 @@ const ZERO: SessionUsageTotals = {
   cacheWriteTokens: 0,
 }
 
-/** Use the live main-agent projection when available. Never add tree.total to
- * it: that would count the main agent twice. The log is only the fallback. */
+/** Add the root and descendants once; tree.total is already that sum. */
 export function combinedTotals(tree: SessionUsageTree, self: SessionUsageTotals = tree.self): SessionUsageTotals {
   return {
     uncachedInputTokens: self.uncachedInputTokens + tree.subagents.uncachedInputTokens,
@@ -24,15 +23,12 @@ export function sessionUsageForDisplay(
   native: SessionUsageTotals | undefined,
   tree: SessionUsageTree | null,
 ): SessionUsageTree {
-  const extra = tree?.selfCompaction ?? ZERO
-  // Native tokenUsage counts message/attempt calls, but not compaction calls.
-  // tree.self already includes compaction, so add the supplement ONLY to native.
-  const self = native === undefined ? tree?.self ?? { ...ZERO } : {
-    uncachedInputTokens: native.uncachedInputTokens + extra.uncachedInputTokens,
-    outputTokens: native.outputTokens + extra.outputTokens,
-    cacheReadTokens: native.cacheReadTokens + extra.cacheReadTokens,
-    cacheWriteTokens: native.cacheWriteTokens + extra.cacheWriteTokens,
-  }
+  // The tree folds the full live/stored log, including failed attempts,
+  // retries, legacy chunks and compaction, and excludes fork-inherited usage.
+  // Native projections can omit those calls or include an inherited prefix;
+  // replacing tree.self (or taking bucket-wise maxima) would lose or double
+  // spend. Native is only the initial fallback while the tree is unavailable.
+  const self = tree?.self ?? native ?? { ...ZERO }
   const subagents = tree?.subagents ?? { ...ZERO }
   return {
     self,

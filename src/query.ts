@@ -51,6 +51,14 @@ export interface UsageSample {
   cacheWriteTokens: number
   turn?: boolean // true for a completed-turn marker
   request?: boolean // true when this sample also counts one provider call
+  /** True when this sample also counts one FAILED provider call. The host
+   *  appends `assistant/attempt` (instead of `assistant/message`) when a
+   *  call's stream ends with an error or is cancelled before any content is
+   *  committed, so that event is the exact boundary of a failed call. The
+   *  marker is ORTHOGONAL to `request` and to the buckets: a failed call was
+   *  still opened by its own `step/start` (so it is already one request) and
+   *  a stream that died mid-flight may still report usage. */
+  failed?: boolean
 }
 
 export interface RangeFilter {
@@ -105,6 +113,7 @@ export function aggregateSamples(
     outputTokens: 0,
     cacheTokens: 0,
     requests: 0,
+    failures: 0,
     turns: 0,
     cacheHit: 0,
     cacheMiss: 0,
@@ -137,6 +146,7 @@ export function aggregateSamples(
   const bucketByProvider = new Map<string, Map<string, number>>()
   const bucketTotals = new Map<string, number>()
   const bucketRequests = new Map<string, number>()
+  const bucketFailures = new Map<string, number>()
   const bucketTurns = new Map<string, number>()
   const bucketCacheHit = new Map<string, number>()
   const bucketCacheMiss = new Map<string, number>()
@@ -153,18 +163,22 @@ export function aggregateSamples(
     // provider billed for this call — uncached input, output, cache reads
     // and writes. The hit/miss rate denominators below stay input-side only.
     const total = sample.inputTokens + sample.outputTokens + sample.cacheReadTokens + sample.cacheWriteTokens
+    // UsageFold emits signed bucket corrections. Even a net-zero correction
+    // can move prompt tokens between cache hit and miss, so only all-zero
+    // buckets are a marker with no token accounting.
+    const hasTokenDelta = sample.inputTokens !== 0 || sample.outputTokens !== 0
+      || sample.cacheReadTokens !== 0 || sample.cacheWriteTokens !== 0
+    if (sample.failed) {
+      out.failures++
+      bucketFailures.set(bucket, (bucketFailures.get(bucket) ?? 0) + 1)
+    }
     if (sample.request) {
-      // One provider call, whether or not it produced tokens — reasonix counts
-      // failed calls too. A marker with no buckets is a request and nothing
-      // else: it must not create a model row, mark its day active, or open an
-      // empty daily bucket. A marker that DOES carry buckets
-      // (`compaction/summary` states the call and its usage in one sample) is
-      // counted here and again through the token accounting below — the two
-      // count different things, so neither doubles the other.
       out.requests++
       bucketRequests.set(bucket, (bucketRequests.get(bucket) ?? 0) + 1)
-      if (total <= 0) continue
     }
+    // Pure markers must not create a model row or an active day. A marker
+    // carrying a correction still updates every billing/cache bucket below.
+    if (!hasTokenDelta) continue
     out.tokens += total
     out.inputTokens += sample.inputTokens
     out.outputTokens += sample.outputTokens
@@ -240,6 +254,7 @@ export function aggregateSamples(
       byModel: byModelObj,
       byProvider: byProviderObj,
       requests: bucketRequests.get(bucket) ?? 0,
+      failures: bucketFailures.get(bucket) ?? 0,
       turns: bucketTurns.get(bucket) ?? 0,
       cacheHit: bucketCacheHit.get(bucket) ?? 0,
       cacheMiss: bucketCacheMiss.get(bucket) ?? 0,

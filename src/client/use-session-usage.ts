@@ -11,7 +11,7 @@ export { billedTotal, cacheHitPercentOf, combinedTotals, hasAnyTokens } from './
 
 export interface SessionTreeReading {
   tree: SessionUsageTree | null
-  /** Log-based main + subagents. The pill substitutes the live main projection. */
+  /** Authoritative log-based main + all descendant usage after the tree loads. */
   totals: SessionUsageTotals | null
 }
 

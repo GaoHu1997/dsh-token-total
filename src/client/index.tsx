@@ -34,6 +34,8 @@ import { ArrowLeft } from 'lucide-react'
 import { TokenTotalPanel } from './TokenTotalPanel.tsx'
 import { StatsIcon } from './stats-icon.tsx'
 import { StatsActivityEntry, StatsLineEnhanced, StatsUsageEntry } from './StatsLineEnhanced.tsx'
+import { ContextUsageEntry, CONTEXT_LOCALE_NS, CONTEXT_LOCALES } from './ContextUsageEntry.tsx'
+import { installContextTakeover } from './context-takeover.ts'
 import { LOCALE_NS, en, zh, zhTW, type TokenTotalKey } from './locales.ts'
 import { isCompatibleGlass, whenGlassReady } from './glass.ts'
 import css from './TokenTotalPanel.module.css'
@@ -117,14 +119,27 @@ const COMPOSER_DOCK = 'conversation.composer.dock'
 
 /** The pre-split takeover: ONE entry at the official 'stats' id, rendering the
  *  whole row (DSH <= 0.2.0-rc.2). */
-function installStatsRowEntry(ctx: Context): () => void {
+function installContextEntry(ctx: Context): () => void {
   return ctx.slots.register({
+    name: COMPOSER_DOCK,
+    id: 'token-total-context',
+    order: 2,
+    priority: -1,
+    locale: CONTEXT_LOCALE_NS,
+    inject: () => ({ installContextTakeover }),
+  }, ContextUsageEntry)
+}
+
+function installStatsRowEntry(ctx: Context): () => void {
+  const offStats = ctx.slots.register({
     name: COMPOSER_DOCK,
     id: 'stats',
     order: 0,
     priority: -1,
     locale: LOCALE_NS,
   }, StatsLineEnhanced)
+  const offContext = installContextEntry(ctx)
+  return () => { offContext(); offStats() }
 }
 
 /** The split takeover: one entry per official pill, each shadowed at its own
@@ -144,7 +159,8 @@ function installSplitDockEntries(ctx: Context): () => void {
     priority: -1,
     locale: LOCALE_NS,
   }, StatsUsageEntry)
-  return () => { offUsage(); offActivity() }
+  const offContext = installContextEntry(ctx)
+  return () => { offContext(); offUsage(); offActivity() }
 }
 
 export function apply(ctx: Context): void {
@@ -154,7 +170,9 @@ export function apply(ctx: Context): void {
     const offZh = ctx.locale.register(LOCALE_NS, 'zh', zh)
     const offEn = ctx.locale.register(LOCALE_NS, 'en', en)
     const offZhTw = ctx.locale.register(LOCALE_NS, 'zh-TW', zhTW)
-    return () => { offZh(); offEn(); offZhTw() }
+    const offContext = Object.entries(CONTEXT_LOCALES).map(([locale, dict]) =>
+      ctx.locale.register(CONTEXT_LOCALE_NS, locale, dict as Record<string, string>))
+    return () => { offZh(); offEn(); offZhTw(); for (const off of offContext) off() }
   }, 'dsh-token-total: dictionaries')
 
   // Join the background plugin's frosted-glass sheet when it is installed,

@@ -25,7 +25,10 @@ const liveStore = (...handles) => ({ list: () => handles, get: id => handles.fin
     fold.fold(event(2, { turn: 1, step: 3, usage: usage(17), stream: stream(usage(99)) })),
   ]
   assert.equal(totals(samples), 37)
-  assert.equal(fold.fold(event(3, { turn: 1, step: 4, stream: [] }, 'assistant/attempt')), null)
+  const emptyAttempt = fold.fold(event(3, { turn: 1, step: 4, stream: [] }, 'assistant/attempt'))
+  assert.equal(emptyAttempt.failed, true)
+  assert.equal(emptyAttempt.request, undefined, 'the step/retry boundary already counts the call')
+  assert.equal(totals([emptyAttempt]), 0)
 })
 
 test('same call emits signed last-wins correction without mutating emitted samples', () => {
@@ -189,6 +192,46 @@ test('tree honors legacy direct parent handles and cycles without double countin
   assert.equal(tree.total.uncachedInputTokens, 30)
 })
 
+test('whole tree retains attempts, retries, legacy chunks and compaction in every billing bucket', async () => {
+  const report = usage(10, 20, 30, 40)
+  const compact = (seq, id) => event(seq, { compactionId: id, usage: report }, 'compaction/summary')
+  const root = [event(0, { turn: 1, step: 1 }, 'step/start'),
+    event(1, { turn: 1, step: 1, chunk: { type: 'usage', usage: usage(1, 2, 3, 4) } }, 'assistant/chunk'),
+    event(2, { turn: 1, step: 1, stream: stream(report) }, 'assistant/attempt'),
+    event(3, { turn: 1, step: 1 }, 'llm/retry-started'),
+    event(4, { turn: 1, step: 1, stream: stream(report) }), compact(5, 'root-compact')]
+  const child = [...root, event(6, { turn: 2, step: 1, stream: stream(report) }, 'assistant/attempt'),
+    event(7, { turn: 2, step: 1 }, 'llm/retry-started'),
+    event(8, { turn: 2, step: 1, usage: report }), compact(9, 'child-compact')]
+  const grandchild = [...child, event(10, { turn: 3, step: 1, stream: stream(report) })]
+  const persistence = legacy([{ id: 'root' }, { id: 'child', parentSession: 'root' }, { id: 'grandchild', parentSession: 'child' }],
+    { root, child, grandchild }, { child: 6, grandchild: 10 })
+  const tree = await new SessionUsageService().tree(persistence, undefined, 'root')
+  assert.deepEqual(tree.self, { uncachedInputTokens: 30, outputTokens: 60, cacheReadTokens: 90, cacheWriteTokens: 120 })
+  assert.deepEqual(tree.subagents, { uncachedInputTokens: 40, outputTokens: 80, cacheReadTokens: 120, cacheWriteTokens: 160 })
+  assert.deepEqual(tree.total, { uncachedInputTokens: 70, outputTokens: 140, cacheReadTokens: 210, cacheWriteTokens: 280 })
+  assert.equal(tree.subagentSessions, 2)
+})
+
+test('live child refresh replaces cumulative reports and completion switches to persisted ownership once', async () => {
+  const logs = { root: [message(0, 100)], child: [message(0, 100)] }
+  const rows = [{ id: 'root' }, { id: 'child', parentSession: 'root' }]
+  const liveChild = { id: 'child', header: rows[1], inheritedEventCount: 1, snapshotEvents: () => liveEvents }
+  let liveEvents = [...logs.child, message(1, 7, 2, 1)], handles = [liveChild]
+  const sessions = { list: () => handles }
+  const persistence = legacy(rows, logs, { child: 1 }), service = new SessionUsageService()
+  assert.equal((await service.tree(persistence, sessions, 'root')).total.uncachedInputTokens, 107)
+  liveEvents = [...liveEvents, message(2, 11, 2, 1)]
+  service.invalidate('child')
+  assert.equal((await service.tree(persistence, sessions, 'root')).total.uncachedInputTokens, 111)
+  logs.child = liveEvents
+  handles = []
+  service.invalidate('child')
+  const completed = await service.tree(persistence, sessions, 'root')
+  assert.equal(completed.total.uncachedInputTokens, 111)
+  assert.equal(completed.subagentSessions, 1)
+})
+
 const mockStore = () => {
   const samples = [], daySeen = new Set(), hourSeen = new Set()
   return { samples,
@@ -198,6 +241,7 @@ const mockStore = () => {
     async markSeenSessions(ids) { for (const id of ids) daySeen.add(id) },
     async markHoursSeenSessions(ids) { for (const id of ids) hourSeen.add(id) },
     async markHoursReady() {}, async markLiveSequences() {}, async markHoursLiveSequences() {},
+    async markFailuresLiveSequences() {}, async markFailuresSeenSessions() {}, async markFailuresReady() {},
   }
 }
 

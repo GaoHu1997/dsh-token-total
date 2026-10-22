@@ -219,6 +219,12 @@ export class UsageFold {
           }
         }
       }
+      // `assistant/attempt` is the host's record of a provider call that FAILED
+      // (its stream ended with an error or was cancelled before any content
+      // was committed); `assistant/message` is every call that committed.
+      // They partition the calls exactly, so the attempt event is the failure
+      // boundary — no error/retry bookkeeping needed downstream.
+      if (ev.type === 'assistant/attempt') return this.attemptSample(ev, usage)
       return usage ? this.replaceSample(ev, usage) : null
     }
     if (ev.type === 'compaction/summary') return this.compactionSample(ev)
@@ -266,6 +272,33 @@ export class UsageFold {
     const emitted = { ...sample }
     this.seen.set(key, emitted)
     return emitted
+  }
+
+  /**
+   * Fold one `assistant/attempt` — a provider call that failed. Tokens follow
+   * the same last-report-wins rule as a committed message (the attempt's
+   * stream is the call's final word, so a usage chunk seen mid-stream is
+   * replaced or corrected, never added twice), but the call must ALWAYS be
+   * counted as one failure: `replaceSample` drops an all-zero first report,
+   * which is correct for the token buckets and would silently lose the
+   * failure. A failed call that reported no usage therefore contributes a
+   * zero-token failure marker instead of a null.
+   */
+  private attemptSample(ev: UsageSessionEvent, usage: UsageEventData['usage'] | undefined): UsageSample {
+    const sample = this.replaceSample(ev, usage)
+    if (sample) {
+      sample.failed = true
+      return sample
+    }
+    return {
+      day: dayKey(ev.time),
+      hour: hourKey(ev.time),
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      failed: true,
+    }
   }
 
   /**
@@ -419,6 +452,9 @@ export class UsageCollector {
         // The hour table keeps its own boundary pair; write it on the same
         // tick so the two never drift apart.
         void this.store.markHoursLiveSequences(batch).catch(() => { this.status.recordFailures++ })
+        // The failure counter has its own pair as well (it was added after
+        // both token cursors were already full); same tick, same boundary.
+        void this.store.markFailuresLiveSequences(batch).catch(() => { this.status.recordFailures++ })
       }
     })
   }
@@ -593,14 +629,22 @@ export class UsageCollector {
     await this.scan(persistence, sessions, signal, 'hours')
   }
 
-  /** Shared replay engine behind {@link backfill} and {@link backfillHours}.
-   *  `target` selects the cursor pair, the write function, and the cursor
-   *  the completed sessions land in. */
+  /** The failure upgrade pass: replay every session the FAILURE cursors have
+   *  not seen, counting only failed calls. Neither the day nor the hour
+   *  cursor covers this counter (both were full when it arrived), and the
+   *  replay must not re-add tokens or requests. */
+  async backfillFailures(persistence: UsageSessionPersistence, sessions: UsageSessionStore, signal?: AbortSignal): Promise<void> {
+    await this.scan(persistence, sessions, signal, 'failures')
+  }
+
+  /** Shared replay engine behind {@link backfill}, {@link backfillHours} and
+   *  {@link backfillFailures}. `target` selects the cursor pair, the write
+   *  function, and the cursor the completed sessions land in. */
   private async scan(
     persistence: UsageSessionPersistence,
     sessions: UsageSessionStore,
     signal: AbortSignal | undefined,
-    target: 'all' | 'hours',
+    target: 'all' | 'hours' | 'failures',
   ): Promise<void> {
     if (this.status.running) return
     if (signal?.aborted) return
@@ -626,13 +670,21 @@ export class UsageCollector {
       // store already saw: the fold's replace semantics dedupe within one
       // pass only, so a full replay would double every counter. The hour
       // pass uses its own pair for the same reason.
-      const seen = target === 'hours' ? await this.store.hoursSeenSessions() : await this.store.seenSessions()
+      const seen = target === 'hours'
+        ? await this.store.hoursSeenSessions()
+        : target === 'failures'
+          ? await this.store.failuresSeenSessions()
+          : await this.store.seenSessions()
       // A pass that starts with an empty day cursor is a first install or a
       // rebuild: it writes both tables, so its completion is also the moment
       // the hour history becomes complete. An upgrade pass starts with a full
       // day cursor and must NOT claim that.
       const dayCursorWasEmpty = seen.size === 0
-      const liveSeq = target === 'hours' ? await this.store.hoursLiveSequences() : await this.store.liveSequences()
+      const liveSeq = target === 'hours'
+        ? await this.store.hoursLiveSequences()
+        : target === 'failures'
+          ? await this.store.failuresLiveSequences()
+          : await this.store.liveSequences()
       // seen alone decides target selection: a session enters
       // backfilledSessions only after its whole replayable range was cleanly
       // folded, so selecting it again would multiply that range by the boot
@@ -644,12 +696,13 @@ export class UsageCollector {
       const concurrency = this.options.backfillConcurrency ?? 4
       let next = 0
       const completed: string[] = []
-      // Each target writes and marks its own surfaces: the upgrade pass must
-      // not touch day rows (their cursors are already advanced) and must not
-      // mark day sessions seen.
+      // Each target writes and marks its own surfaces: the upgrade passes must
+      // not touch the counters their cursors already account for.
       const writeSample = target === 'hours'
         ? (sample: UsageSample): Promise<void> => this.store.recordHours(sample)
-        : (sample: UsageSample): Promise<void> => this.store.record(sample)
+        : target === 'failures'
+          ? (sample: UsageSample): Promise<void> => this.store.recordFailure(sample)
+          : (sample: UsageSample): Promise<void> => this.store.record(sample)
       const flushCompleted = async (): Promise<void> => {
         if (completed.length === 0) return
         const batch = completed.splice(0, completed.length)
@@ -657,10 +710,16 @@ export class UsageCollector {
           await this.store.markHoursSeenSessions(batch)
           return
         }
+        if (target === 'failures') {
+          await this.store.markFailuresSeenSessions(batch)
+          return
+        }
         await this.store.markSeenSessions(batch)
         // `record()` above wrote both tables, so the hour cursor advances in
         // the same batch.
         await this.store.markHoursSeenSessions(batch)
+        // ... and the failure counter was folded by the same replay.
+        await this.store.markFailuresSeenSessions(batch)
       }
       const worker = async () => {
         for (;;) {
@@ -777,14 +836,20 @@ export class UsageCollector {
       }
       await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(1, targets.length)) }, worker))
       await flushCompleted()
-      // Claim the hour history only when this pass covered what it set out
-      // to cover. A first install / rebuild starts with an empty day cursor
-      // and double-writes; the upgrade pass is the hour pass itself. An
-      // aborted or erroring scan leaves the flag off, and the seen sets make
-      // the retry exact.
+      // Claim a surface only when this pass covered what it set out to cover.
+      // A pass that starts from an EMPTY cursor is a first install or a
+      // rebuild: it folds the whole history, so it completes every counter
+      // that rides the samples (the failure counter included, since `record`
+      // and `recordHours` both accumulate it). An aborted or erroring scan
+      // leaves the flags off, and the seen sets make the retry exact.
+      const clean = !signal?.aborted && this.status.error === undefined
       const hourPassCompleted = target === 'hours' || dayCursorWasEmpty
-      if (hourPassCompleted && !signal?.aborted && this.status.error === undefined) {
+      if (hourPassCompleted && clean) {
         await this.store.markHoursReady()
+      }
+      const failuresPassCompleted = target === 'failures' || dayCursorWasEmpty
+      if (failuresPassCompleted && clean) {
+        await this.store.markFailuresReady()
       }
     } finally {
       this.status.running = false

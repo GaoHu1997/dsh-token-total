@@ -212,6 +212,34 @@ export function apply(ctx: Context, config: TokenTotalConfig = {}): void {
     await collector.backfillHours(ctx.sessionPersistence, ctx.sessions, controller.signal)
   }
 
+  // The failure counter arrived after BOTH token cursors were populated, so
+  // an existing store needs one more replay to recover historic failures.
+  // Same shape as the hour upgrade: only after the hour pass settled cleanly
+  // (a fresh install's passes already folded failures and set the flag, so
+  // this returns immediately), and with a live boundary for open sessions.
+  const ensureFailureHistory = async (): Promise<void> => {
+    await store.readyPromise()
+    if (await store.failuresReady()) return
+    if (!(await store.hasAnyDayRows())) return
+    if (collector.status.error !== undefined) return
+    const previous = await store.failuresLiveSequences()
+    const boundaries = new Map<string, number>()
+    for (const handle of ctx.sessions.list()) {
+      const seq = handle.seq
+      if (typeof seq === 'number' && Number.isFinite(seq) && seq >= 0) {
+        boundaries.set(handle.id, seq)
+        continue
+      }
+      const old = previous.get(handle.id)
+      boundaries.set(handle.id, typeof old === 'number' ? old : -1)
+    }
+    await store.markFailuresLiveSequences(boundaries)
+    scanController?.abort()
+    const controller = new AbortController()
+    scanController = controller
+    await collector.backfillFailures(ctx.sessionPersistence, ctx.sessions, controller.signal)
+  }
+
   ctx.effect(() => {
     collector.start()
     // Keep the per-session tree cache honest: every committed event of any
@@ -226,6 +254,7 @@ export function apply(ctx: Context, config: TokenTotalConfig = {}): void {
     void (async () => {
       await rescan()
       await ensureHourHistory()
+      await ensureFailureHistory()
     })()
     return () => {
       scanController?.abort()

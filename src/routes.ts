@@ -162,6 +162,12 @@ export async function aggregateRange(
       for (let i = 0; i < row.requests; i++) {
         yield { day, hour, model: row.model, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, request: true }
       }
+      // Failed calls ride the row as a count too. They are folded as their own
+      // marker (never as an extra request): the call's request is already
+      // counted above, and a zero-token failure must not open a model row.
+      for (let i = 0; i < (row.failures ?? 0); i++) {
+        yield { day, hour, model: row.model, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, failed: true }
+      }
       for (let i = 0; i < row.turns; i++) {
         yield { day, hour, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turn: true }
       }

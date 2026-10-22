@@ -80,14 +80,16 @@ test('session breakdown and live speed stay enabled for legacy false/true settin
   }
 })
 
-test('usage pill and every dialog bucket share live main + descendants in both layouts', () => {
+test('usage pill and every dialog bucket share authoritative tree totals in both layouts', () => {
   const pills = loadPills({})
   const subagents = { uncachedInputTokens: 100, outputTokens: 200, cacheReadTokens: 300, cacheWriteTokens: 400 }
-  const staleSelf = { uncachedInputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 }
-  const tree = { tree: { self: staleSelf, subagents, total: sessionCore.combinedTotals({ self: staleSelf, subagents }), subagentSessions: 12 } }
+  // Deliberately differ from native usage: the log owns retries, compaction
+  // and inherited-prefix exclusion, and must drive both the pill and dialog.
+  const self = { uncachedInputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 }
+  const tree = { tree: { self, subagents, total: sessionCore.combinedTotals({ self, subagents }), subagentSessions: 12 } }
   for (const dock of [false, true]) {
     const nodes = flatten(pills.UsagePill({ usage, tree, t, dock }))
-    const total = sessionCore.billedTotal(usage) + sessionCore.billedTotal(subagents)
+    const total = sessionCore.billedTotal(self) + sessionCore.billedTotal(subagents)
     const button = nodes.find(node => node.type === 'button')
     assert.ok(button.props['aria-label'].includes(`"count":"${core.formatTokensCompact(total)}"`))
     const detail = key => {
@@ -95,12 +97,12 @@ test('usage pill and every dialog bucket share live main + descendants in both l
       assert.ok(index >= 0, `missing ${key}`)
       return nodes[index + 1].props.children
     }
-    assert.equal(detail('stats.dialog.main'), 'message.turnUsage.count:{"count":"134"}')
+    assert.equal(detail('stats.dialog.main'), 'message.turnUsage.count:{"count":"10"}')
     assert.equal(detail('stats.dialog.treeTotal'), `message.turnUsage.count:{"count":"${total}"}`)
-    assert.equal(detail('message.turnUsage.input'), 'message.turnUsage.count:{"count":"110"}')
-    assert.equal(detail('message.turnUsage.cacheRead'), 'message.turnUsage.count:{"count":"320"}')
-    assert.equal(detail('message.turnUsage.cacheWrite'), 'message.turnUsage.count:{"count":"405"}')
-    assert.equal(detail('message.turnUsage.output'), 'message.turnUsage.count:{"count":"299"}')
+    assert.equal(detail('message.turnUsage.input'), 'message.turnUsage.count:{"count":"101"}')
+    assert.equal(detail('message.turnUsage.cacheRead'), 'message.turnUsage.count:{"count":"303"}')
+    assert.equal(detail('message.turnUsage.cacheWrite'), 'message.turnUsage.count:{"count":"404"}')
+    assert.equal(detail('message.turnUsage.output'), 'message.turnUsage.count:{"count":"202"}')
   }
 })
 

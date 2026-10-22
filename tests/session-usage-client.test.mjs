@@ -10,11 +10,11 @@ const main = { uncachedInputTokens: 100, outputTokens: 20, cacheReadTokens: 300,
 const child = { uncachedInputTokens: 1000, outputTokens: 200, cacheReadTokens: 3000, cacheWriteTokens: 400 }
 const tree = { self: main, subagents: child, total: combinedTotals({ self: main, subagents: child }), subagentSessions: 2 }
 
-test('display sums all four buckets, with the live main overriding only tree.self', () => {
-  const live = { ...main, outputTokens: 50 }
-  const display = sessionUsageForDisplay(live, tree)
-  assert.deepEqual(display.self, live)
-  assert.deepEqual(display.total, { uncachedInputTokens: 1100, outputTokens: 250, cacheReadTokens: 3300, cacheWriteTokens: 440 })
+test('display sums all four tree buckets without replacing root spend with native usage', () => {
+  const native = { ...main, outputTokens: 50 }
+  const display = sessionUsageForDisplay(native, tree)
+  assert.deepEqual(display.self, main)
+  assert.deepEqual(display.total, { uncachedInputTokens: 1100, outputTokens: 220, cacheReadTokens: 3300, cacheWriteTokens: 440 })
   assert.equal(billedTotal(display.total), billedTotal(display.self) + billedTotal(display.subagents))
   assert.equal(display.subagentSessions, 2)
 })
@@ -22,11 +22,11 @@ test('display sums all four buckets, with the live main overriding only tree.sel
 test('pending tree uses native main, missing native uses logs, delegated-only still has tokens', () => {
   assert.equal(billedTotal(sessionUsageForDisplay(main, null).total), 460)
   assert.deepEqual(sessionUsageForDisplay(undefined, tree).total, tree.total)
-  assert.equal(billedTotal(sessionUsageForDisplay(zeros(), tree).total), 4600)
+  assert.equal(billedTotal(sessionUsageForDisplay(zeros(), tree).total), 5060)
   assert.equal(billedTotal(sessionUsageForDisplay(undefined, null).total), 0)
 })
 
-test('root compaction supplements native main once, but is already included in log fallback', () => {
+test('root compaction is already included in tree.self and never added twice', () => {
   const compaction = { uncachedInputTokens: 7, outputTokens: 11, cacheReadTokens: 13, cacheWriteTokens: 17 }
   const own = { uncachedInputTokens: 107, outputTokens: 31, cacheReadTokens: 313, cacheWriteTokens: 57 }
   const compacted = { ...tree, self: own, selfCompaction: compaction, total: combinedTotals({ self: own, subagents: child }) }
@@ -35,6 +35,20 @@ test('root compaction supplements native main once, but is already included in l
   assert.deepEqual(displayed.total, compacted.total)
   assert.deepEqual(sessionUsageForDisplay(undefined, compacted).total, compacted.total)
   assert.equal(billedTotal(displayed.total), billedTotal(main) + billedTotal(compaction) + billedTotal(child))
+})
+
+test('incomplete native usage cannot hide failed-attempt and legacy spend recorded by the tree', () => {
+  const incomplete = { uncachedInputTokens: 10, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 }
+  assert.deepEqual(sessionUsageForDisplay(incomplete, tree).total, tree.total)
+  assert.deepEqual(sessionUsageForDisplay(zeros(), tree).total, tree.total)
+})
+
+test('native fork-inherited history cannot inflate the root or compaction buckets', () => {
+  const own = { uncachedInputTokens: 7, outputTokens: 11, cacheReadTokens: 13, cacheWriteTokens: 17 }
+  const fork = { self: own, selfCompaction: own, subagents: child, total: combinedTotals({ self: own, subagents: child }), subagentSessions: 2 }
+  const inheritedNative = { uncachedInputTokens: 10007, outputTokens: 20011, cacheReadTokens: 30013, cacheWriteTokens: 40017 }
+  assert.deepEqual(sessionUsageForDisplay(inheritedNative, fork).total, fork.total)
+  assert.deepEqual(sessionUsageForDisplay(inheritedNative, fork).self, own)
 })
 
 const require = createRequire(import.meta.url)
