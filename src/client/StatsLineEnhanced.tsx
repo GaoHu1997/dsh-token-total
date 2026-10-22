@@ -23,9 +23,12 @@
  * Which pair to register is read from the dock's entry ledger in
  * src/client/index.tsx.
  *
- * Cache-hit precision, the full session token breakdown and streaming
- * throughput are always enabled; no stored preferences gate these readouts.
- * The token dialog includes the cache-miss row alongside every billing bucket.
+ * Streaming throughput is always enabled; no stored preference gates it. The
+ * three columns are style-for-style the official ones: same tier, radius,
+ * colours, same dialog rows and the same integer cache-hit figure. The one
+ * difference is the middle figure's SCOPE — it totals the whole session tree
+ * (this agent plus every subagent it spawned), which the native projection
+ * cannot see.
  *
  * Streaming throughput replaces the gauge pill's speed
  * figure with a live estimate while a step is still streaming and drops back to
@@ -44,14 +47,14 @@
  */
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { IconDatabaseOutline16, IconGaugeOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import { DatabaseIcon, GaugeIcon } from './stats-icons.tsx'
 import { LOCALE_NS } from './locales.ts'
 import { MEASURE_STYLE, useStatDialog, type StatDialogSeat } from './stat-dialog.ts'
 import {
-  billedInputTokens, cacheHitPercentPrecise, deriveStats,
+  billedInputTokens, cacheHitPercent, deriveStats,
   estimateOutputTokens, formatDuration, formatTokensCompact, formatTokensPerSecond,
-  measuredTokenScale, StreamingRateSampler, tokenBreakdown,
+  measuredTokenScale, StreamingRateSampler,
   type ConversationNodeLike, type PartialAssistantLike, type UseProjection, type WindowStats,
 } from './stats-line-core.ts'
 import { formatTokens } from './format.ts'
@@ -112,18 +115,15 @@ function anchorClass(dock: boolean): string | undefined {
   return dock ? `${css.anchor} ${css.dockAnchor}` : css.anchor
 }
 
-/** The separator + figure shape both speed arms render into the gauge pill.
- *  The figure sits in a width-reserved slot (css.speed): the live reading
- *  changes every second, and a slot that tracked its digits would reflow the
- *  centred row — and with it the counts pill — on every refresh. The slot is
- *  rendered even with no figure at all (an empty session has no official figure
- *  to fall back to until its first step settles), so the row's layout never
- *  depends on whether a number is available. */
+/** The separator + figure shape both speed arms render into the gauge pill:
+ *  exactly the official pill's inline shape — separator and figure appear only
+ *  when there is a figure, and the figure occupies no reserved width, so the
+ *  row reads and reflows like the native one. */
 function SpeedFigure({ text }: { text: string | null }) {
   return (
     <>
       {text !== null && <span className={css.sep} aria-hidden>·</span>}
-      <span className={css.speed} data-stats-speed>{text}</span>
+      {text !== null && <span className={css.speed} data-stats-speed>{text}</span>}
     </>
   )
 }
@@ -290,7 +290,7 @@ function TimePill({ stats, t, dialog, useChat, scale, dock }: {
     return (
       <span className={anchorClass(dock)}>
         <span className={css.pill}>
-          <IconGaugeOutline16 />
+          <GaugeIcon />
           {label}
         </span>
       </span>
@@ -306,7 +306,7 @@ function TimePill({ stats, t, dialog, useChat, scale, dock }: {
         aria-label={officialTps === null ? counts : counts + ' · ' + officialTps}
         onClick={() => { setOpen(!open) }}
       >
-        <IconGaugeOutline16 />
+        <GaugeIcon />
         {label}
       </button>
       {open && createPortal(
@@ -320,7 +320,7 @@ function TimePill({ stats, t, dialog, useChat, scale, dock }: {
         >
           <div className={css.dialogTitle}>
             <span className={css.dialogTitleLabel}>
-              <IconGaugeOutline16 />
+              <GaugeIcon />
               {t('stats.dialog.title')}
             </span>
           </div>
@@ -372,13 +372,15 @@ function UsagePill({ usage, tree, t, dialog, dock }: {
 }) {
   const { open, setOpen, rootRef, panelRef, pos } = useStatDialog(dialog)
   const display = sessionUsageForDisplay(usage, tree?.tree ?? null)
-  const subagentTotals = display.subagents
-  const showSubagents = display.subagentSessions > 0
   const billed = display.total
   // Same aggregate as the official pill total: every prompt-side billing bucket plus output.
   const total = billedTotal(billed)
   const totalText = t('message.turnUsage.count', { count: formatTokensCompact(total) })
-  const cacheHit = cacheHitPercentPrecise(billed)
+  // Native formatting, one consistent scope: the ratio comes from the same
+  // aggregate the headline uses, so "33M tok · 87%" can never contradict the
+  // number printed beside it. The integer shape and its >99% guard are the
+  // official ones, untouched.
+  const cacheHit = cacheHitPercent(billed)
   const cacheHitText = cacheHit !== null ? t('stats.cacheHit', { percent: cacheHit }) : null
   const exactCount = (value: number): string =>
     t('message.turnUsage.count', { count: formatTokens(value) })
@@ -392,19 +394,13 @@ function UsagePill({ usage, tree, t, dialog, dock }: {
         aria-label={cacheHitText === null ? totalText : totalText + ' · ' + cacheHitText}
         onClick={() => { setOpen(!open) }}
       >
-        <IconDatabaseOutline16 />
+        <DatabaseIcon />
         <span className={css.label}>
           {totalText}
-          {showSubagents && (
-            <span className={css.sep} aria-hidden>·</span>
-          )}
-          {showSubagents && (
-            <span className={css.subagentMark} title={t('stats.dialog.subagents')}>
-              +{tree?.tree?.subagentSessions ?? 0}
-            </span>
-          )}
           {cacheHitText !== null && (
             <>
+              {/* Separator only when the second figure exists: an empty span
+                  would still take the label's gap and read as a trailing dot. */}
               <span className={css.sep} aria-hidden>·</span>
               {cacheHitText}
             </>
@@ -422,12 +418,14 @@ function UsagePill({ usage, tree, t, dialog, dock }: {
         >
           <div className={css.dialogTitle}>
             <span className={css.dialogTitleLabel}>
-              <IconDatabaseOutline16 />
+              <DatabaseIcon />
               {t('stats.dialog.usageTitle')}
             </span>
             <span className={css.dialogTitleValue}>{exactCount(total)}</span>
           </div>
           <div className={css.dialogTitleRule} aria-hidden />
+          {/* Exactly the official dialog's rows, in the official order: the
+              takeover adds the tree to the TOTAL, not to the breakdown. */}
           <dl className={css.dialogDetails} data-session-stats-usage>
             {cacheHit !== null && (
               <>
@@ -439,28 +437,14 @@ function UsagePill({ usage, tree, t, dialog, dock }: {
             <dd>{exactCount(billed.uncachedInputTokens)}</dd>
             <dt>{t('message.turnUsage.cacheRead')}</dt>
             <dd>{exactCount(billed.cacheReadTokens)}</dd>
-            <dt>{t('message.turnUsage.cacheWrite')}</dt>
-            <dd>{exactCount(billed.cacheWriteTokens)}</dd>
-            <dt>{t('stats.cacheMiss')}</dt>
-            <dd>{exactCount(tokenBreakdown(billed).cacheMiss)}</dd>
-            <dt>{t('message.turnUsage.output')}</dt>
-            <dd>{exactCount(billed.outputTokens)}</dd>
-            {/* The split that the native figure cannot show: this session's own
-                main agent against every subagent it delegated to. */}
-            {showSubagents && (
+            {billed.cacheWriteTokens !== 0 && (
               <>
-                <dt>{t('stats.dialog.main')}</dt>
-                <dd>{exactCount(billedTotal(display.self))}</dd>
-                <dt>{t('stats.dialog.subagents')}</dt>
-                <dd>
-                  {exactCount(billedTotal(subagentTotals))}
-                  {' · '}
-                  {t('stats.dialog.subagentCount', { count: tree?.tree?.subagentSessions ?? 0 })}
-                </dd>
-                <dt>{t('stats.dialog.treeTotal')}</dt>
-                <dd>{exactCount(billedTotal(billed))}</dd>
+                <dt>{t('message.turnUsage.cacheWrite')}</dt>
+                <dd>{exactCount(billed.cacheWriteTokens)}</dd>
               </>
             )}
+            <dt>{t('message.turnUsage.output')}</dt>
+            <dd>{exactCount(billed.outputTokens)}</dd>
           </dl>
         </div>,
         document.body,

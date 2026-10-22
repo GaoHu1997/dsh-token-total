@@ -6,3 +6,4 @@ lib/
 artifacts/
 package-lock.json
 .dsh-inspect/
+.tmp/

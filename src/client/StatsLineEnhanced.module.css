@@ -53,7 +53,7 @@
    declarations from `.root` onto `.anchor`. The tier stays off the plain
    `.anchor` because the pre-split row must keep its own `.root` tier. */
 .dockAnchor {
-  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
 }
 
@@ -65,8 +65,8 @@
   max-width: 100%;
   padding: 1px 8px;
   border: none;
-  border-radius: 24px;
-  background: transparent;
+  border-radius: var(--dsw-radius-sm);
+  background: none;
   color: var(--dsw-alias-label-tertiary);
   font: inherit;
   font-variant-numeric: tabular-nums;
@@ -103,22 +103,13 @@ button.pill[aria-expanded='true'] {
   margin: 0 6px;
 }
 
-/* Reserved slot for the speed figure: the official pill's figure only changes
-   when a step settles, but the live reading refreshes on every beat. A width
-   that tracked the digits would reflow the centred row on each of them and drag
-   the counts pill beside it along; 10ch covers "1200 tok/s", the widest shape
-   formatTokensPerSecond can produce. */
+/* The live throughput reading sits inline exactly like the official figure:
+   no reserved width, no box of its own. The earlier `min-width: 10ch` slot kept
+   the centred row from shifting while the number grew, but it also left a
+   permanent gap before the separator — the official pill has no such slot, and
+   native parity wins over that jitter fix. */
 .speed {
-  display: inline-block;
-  min-width: 10ch;
-}
-
-/* Marks a usage figure that now includes subagent spend. Deliberately quiet:
-   it rides inside the official pill's label and must not read as a badge or
-   compete with the token count beside it. */
-.subagentMark {
-  color: var(--dsw-alias-label-tertiary);
-  font-variant-numeric: tabular-nums;
+  display: inline;
 }
 
 /* Portal dialog surface: fixed in the viewport, left/top supplied inline from
@@ -135,15 +126,15 @@ button.pill[aria-expanded='true'] {
   width: max-content;
   min-width: min(300px, calc(100vw - 24px));
   max-width: min(440px, calc(100vw - 24px));
-  padding: 16px;
+  padding: 12px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--dsw-radius-lg);
   background: var(--dsw-specific-menu);
   backdrop-filter: var(--dsw-menu-backdrop-filter);
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-elevation-prominent);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
   color: var(--dsw-alias-label-secondary);
   cursor: default;
 }
@@ -160,7 +151,7 @@ button.pill[aria-expanded='true'] {
 
 /* Rule under the heading, above its rows. */
 .dialogTitleRule {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
@@ -185,7 +176,7 @@ button.pill[aria-expanded='true'] {
 .dialogDetails {
   display: grid;
   grid-template-columns: minmax(76px, auto) minmax(0, 1fr);
-  gap: 6px 16px;
+  gap: 4px 12px;
   margin: 0;
   color: var(--dsw-alias-label-tertiary);
 }

@@ -10,7 +10,7 @@ export const CONTEXT_LOCALE_NS = 'tokenTotalContext'
 const keys = ['label', 'used', 'system', 'tools', 'messages', 'aria', 'thousand', 'million'] as const
 export type ContextLocaleKey = typeof keys[number]
 export const CONTEXT_LOCALES: Record<string, Record<ContextLocaleKey, string>> = {
-  zh: { label: '上下文', used: '已用上下文', system: '系统提示词', tools: '工具', messages: '对话', aria: '上下文占用 {percent}', thousand: '{value}千', million: '{value}百万' },
+  zh: { label: '上下文', used: '上下文已用', system: '系统提示词', tools: '工具定义', messages: '对话消息', aria: '上下文已用 {percent}', thousand: '{value}K', million: '{value}M' },
   en: { label: 'Context', used: 'Context used', system: 'System', tools: 'Tools', messages: 'Conversation', aria: 'Context usage {percent}', thousand: '{value}K', million: '{value}M' },
   'zh-TW': { label: '上下文', used: '已用上下文', system: '系統提示詞', tools: '工具', messages: '對話', aria: '上下文使用量 {percent}', thousand: '{value}千', million: '{value}百萬' },
 }
@@ -50,12 +50,14 @@ export function ContextUsageEntry({ useProjection, t, installContextTakeover }: 
   if (context === null) return null
   const percent = context.percent
   const reading = `${percent}%`
-  const total = breakdown === undefined ? 0 : breakdown.systemTokens + breakdown.toolsTokens + breakdown.messageTokens
   const segments = contextBreakdownSegments(percent, breakdown)
   const format = (value: number): string => formatContextTokens(value, {
     thousand: t('thousand'), million: t('million'),
   })
-  const label = (part: 'system' | 'tools' | 'messages'): string => t(part)
+  const [headBefore = '', headAfter = ''] = t('aria', { percent: '\0' }).split('\0').map(part => part.trim())
+  const rowLabels = ['system', 'tools', 'messages'] as const
+  const rowColors = ['colorSystem', 'colorTools', 'colorMessages'] as const
+  const segmentColors: Record<string, string> = { systemTokens: css.colorSystem, toolsTokens: css.colorTools, messageTokens: css.colorMessages }
   return (
     <span ref={rootRef} className={css.root} data-dsh-token-total-stat="context">
       <button type="button" className={css.trigger} aria-label={t('aria', { percent: reading })} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -68,13 +70,15 @@ export function ContextUsageEntry({ useProjection, t, installContextTakeover }: 
       {open && createPortal(
         <div ref={panelRef} className={css.panel} style={position ?? MEASURE_STYLE} role="dialog" aria-label={t('used')}>
           <div className={css.header}>
-            <span>{t('used')}</span><span className={css.percent}>{reading}</span>
+            <span className={css.headline}>{headBefore}</span>
+            <span className={css.percent}>{reading}</span>
+            <span className={css.headline}>{headAfter}</span>
             <span className={css.figures}>{`~${format(context.usedTokens)} / ${format(context.contextWindow)}`}</span>
           </div>
-          <div className={css.bar}>{segments.map(segment => <div key={segment.key} className={`${css.segment} ${css[segment.key] ?? ''}`} style={{ width: `${segment.width}%` }} />)}</div>
-          {breakdown !== undefined && total > 0 && <dl className={css.rows}>
+          <div className={css.bar}>{segments.map(segment => <div key={segment.key} className={segmentColors[segment.key] === undefined ? css.segment : `${css.segment} ${segmentColors[segment.key]}`} style={{ width: `${segment.width}%` }} />)}</div>
+          {breakdown !== undefined && <dl className={css.rows}>
             {(['systemTokens', 'toolsTokens', 'messageTokens'] as const).map((key, index) => <div className={css.row} key={key}>
-              <dt><span className={`${css.swatch} ${css[key]}`} />{label((['system', 'tools', 'messages'] as const)[index])}</dt>
+              <dt><span className={`${css.swatch} ${css[rowColors[index]]}`} />{t(rowLabels[index])}</dt>
               <dd>{`~${format(breakdown[key])}`}</dd>
             </div>)}
           </dl>}

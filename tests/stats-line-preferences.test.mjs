@@ -32,7 +32,8 @@ const loadPills = (saved) => {
     if (name === 'react') return react
     if (name === 'react/jsx-runtime') return { jsx: element, jsxs: element, Fragment: 'fragment' }
     if (name === 'react-dom') return { createPortal: content => content }
-    if (name === '@deepseek-ai/dsh-client-ui-primitives') return { IconDatabaseOutline16: 'database', IconGaugeOutline16: 'gauge' }
+    if (name === '@deepseek-ai/dsh-client-ui-primitives') return { IconDatabaseOutlineRegular: 'database', IconGaugeOutlineRegular: 'gauge' }
+    if (name === './stats-icons.tsx') return { DatabaseIcon: 'database', GaugeIcon: 'gauge' }
     if (name === './stats-line-core.ts') return core
     if (name === './format.ts') return { formatTokens: String }
     if (name === './locales.ts') return { LOCALE_NS: 'tokenTotal' }
@@ -62,13 +63,17 @@ test('session breakdown and live speed stay enabled for legacy false/true settin
     const pills = loadPills({ cachePrecision: enabled, tokenDetail: enabled, streamThroughput: enabled })
     for (const dock of [false, true]) {
       const nodes = flatten(pills.UsagePill({ usage, t, dock }))
-      const missIndex = nodes.findIndex(node => node.type === 'dt' && node.props.children === 'stats.cacheMiss')
-      assert.ok(missIndex >= 0, 'cache miss detail must render unconditionally')
-      assert.equal(nodes[missIndex + 1].type, 'dd')
-      assert.equal(nodes[missIndex + 1].props.children, 'message.turnUsage.count:{"count":"15"}')
-      for (const key of ['input', 'cacheRead', 'cacheWrite', 'output']) {
-        assert.ok(nodes.some(node => node.type === 'dt' && node.props.children === `message.turnUsage.${key}`))
-      }
+      // Native row set in native order: the takeover widens the TOTAL's scope,
+      // not the breakdown, so there is no cache-miss row and no extra split.
+      const keys = nodes.filter(node => node.type === 'dt').map(node => node.props.children)
+      assert.deepEqual(keys, [
+        'message.turnUsage.cacheHit',
+        'message.turnUsage.input',
+        'message.turnUsage.cacheRead',
+        'message.turnUsage.cacheWrite',
+        'message.turnUsage.output',
+      ])
+      assert.equal(nodes.findIndex(node => node.props.children === 'stats.cacheMiss'), -1)
       const stats = { turns: 1, steps: 1, llmMs: 1000, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 1000, decodeTokens: 50 }
       const timeNodes = flatten(pills.TimePill({ stats, t, dock, useChat: read => read({ legacy: { partial: null } }), scale: 1 }))
       const live = timeNodes.find(node => typeof node.type === 'function' && node.type.name === 'LiveSpeed')
@@ -97,12 +102,19 @@ test('usage pill and every dialog bucket share authoritative tree totals in both
       assert.ok(index >= 0, `missing ${key}`)
       return nodes[index + 1].props.children
     }
-    assert.equal(detail('stats.dialog.main'), 'message.turnUsage.count:{"count":"10"}')
-    assert.equal(detail('stats.dialog.treeTotal'), `message.turnUsage.count:{"count":"${total}"}`)
     assert.equal(detail('message.turnUsage.input'), 'message.turnUsage.count:{"count":"101"}')
     assert.equal(detail('message.turnUsage.cacheRead'), 'message.turnUsage.count:{"count":"303"}')
     assert.equal(detail('message.turnUsage.cacheWrite'), 'message.turnUsage.count:{"count":"404"}')
     assert.equal(detail('message.turnUsage.output'), 'message.turnUsage.count:{"count":"202"}')
+    // The one deliberate divergence from native: the pill's headline total is the
+    // WHOLE session tree, subagents included.
+    assert.ok(
+      button.props['aria-label'].includes(`"count":"${core.formatTokensCompact(total)}"`),
+      'pill total must include subagent spend',
+    )
+    // ...and nothing else diverges: no main/tree rows, no +N badge.
+    assert.equal(nodes.findIndex(node => node.props.children === 'stats.dialog.main'), -1)
+    assert.equal(nodes.findIndex(node => node.props.children === 'stats.dialog.treeTotal'), -1)
   }
 })
 
@@ -131,8 +143,9 @@ test('both composer layouts have no preference gates; panel has no enhancement o
   const panel = await readFile(new URL('../src/client/TokenTotalPanel.tsx', import.meta.url), 'utf8')
   const locales = await readFile(new URL('../src/client/locales.ts', import.meta.url), 'utf8')
   const css = await readFile(new URL('../src/client/TokenTotalPanel.module.css', import.meta.url), 'utf8')
-  assert.match(pillSource, /const cacheHit = cacheHitPercentPrecise\(billed\)/)
-  assert.doesNotMatch(pillSource, /cachePrecision|tokenDetail|streamThroughput|liveSpeed|stats-line-state|cacheHitPercent\(/)
+  // Native integer cache-hit figure, and no preference/state machinery anywhere.
+  assert.match(pillSource, /const cacheHit = cacheHitPercent\(billed\)/)
+  assert.doesNotMatch(pillSource, /cachePrecision|tokenDetail|streamThroughput|liveSpeed|stats-line-state|cacheHitPercentPrecise\(/)
   assert.doesNotMatch(panel, /cachePrecision|tokenDetail|streamThroughput|StatsLineOptions|SettingToggle|prefGroup|role="switch"|stats-line-state|rebuildStats|rebuildTimer/)
   assert.doesNotMatch(locales, /cachePrecision|tokenDetail|streamThroughput|rebuildConfirm|rebuilding/)
   assert.doesNotMatch(css, /\.prefGroup|\.prefRow|\.switchTrack|\.switchThumb/)
