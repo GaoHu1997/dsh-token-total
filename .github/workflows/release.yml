@@ -126,7 +126,24 @@ jobs:
               fi
               ;;
           esac
-          pnpm publish --access public --no-git-checks --tag "${{ steps.meta.outputs.dist_tag }}"
+          # npm's first publish of a package goes through staged publishing: the
+          # version only becomes public a minute later, and until then `npm view`
+          # cannot see it. A second run for the same tag therefore passes the
+          # "Refuse to republish" check and then loses the race at the PUT with
+          # E409. That is the version being published, not a broken release, so
+          # the conflict is absorbed here and the Release step below still runs
+          # (it is idempotent: it re-uploads the tarball with --clobber).
+          publish_log=""
+          publish_status=0
+          publish_log="$(pnpm publish --access public --no-git-checks --tag "${{ steps.meta.outputs.dist_tag }}" 2>&1)" || publish_status=$?
+          echo "${publish_log}"
+          if [ "${publish_status}" -ne 0 ]; then
+            if echo "${publish_log}" | grep -q "Cannot publish over previously \(staged\|published\) version"; then
+              echo "::warning::${{ steps.meta.outputs.name }}@${{ steps.meta.outputs.version }} is already on npm — skipping the duplicate publish"
+            else
+              exit "${publish_status}"
+            fi
+          fi
 
       # Runs only after npm accepted the package, so a Release never advertises
       # a version that was not published.
