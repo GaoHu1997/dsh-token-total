@@ -1,6 +1,6 @@
 {
   "name": "dsh-token-total",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "DSH web plugin: token 用量统计看板 + 单会话（主智能体 + 子智能体）用量统计。提供今日/近3天/近7天/近1月/近3月/自定义筛选、六个汇总卡片、活跃热力图、缓存命中率折线与分模型柱状图、按模型/按供应商 Top5 列表。",
   "icon": "./icon.svg",
   "type": "module",
@@ -23,7 +23,8 @@
   },
   "author": "GaoHu1997 (奋斗的小高) <gaohu9712@163.com>",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -151,6 +152,7 @@
     "react": "^18.2.0",
     "react-dom": "18.2.0",
     "tsdown": "^0.22.2",
-    "typescript": "^5.6.0"
-  }
+    "typescript": "^5.9.0"
+  },
+  "packageManager": "pnpm@11.7.0"
 }

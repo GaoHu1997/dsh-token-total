@@ -96,11 +96,11 @@ dsh plugin --profile <profile> add "file:D:\work\dsh-token-total"
 ## 开发
 
 ```sh
-npm install --legacy-peer-deps
-npm run build        # tsc 声明 + 宿主/浏览器两个 bundle
-npm run typecheck    # 宿主半区
-npm run typecheck:client
-npm test             # 模型显示名称聚合、趋势、底部偏好回归测试
+pnpm install
+pnpm run build        # tsc 声明 + 宿主/浏览器两个 bundle
+pnpm run typecheck    # 宿主半区
+pnpm run typecheck:client
+pnpm test             # 模型显示名称聚合、趋势、底部偏好回归测试
 ```
 
 产物：`lib/index.js`（宿主，ESM）、`lib/client.js`（浏览器，CJS 包装进 `__ModuleLoader__.load`）、`lib/types/**/*.d.ts`。CSS Modules 在构建时被内联成 `<style data-plugin-css>` 注入，因此 Web 外壳不需要 CSS 管线。
