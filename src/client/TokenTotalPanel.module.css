@@ -83,12 +83,12 @@
   gap: 2px;
   padding: 3px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  border-radius: 9px;
   background: var(--dsw-alias-bg-layer-1);
 }
 
 /* A range-preset chip: ghost Button inside the group, active state tinted
-   with the interactive-active fill. */
+   with the brand accent (same blue as the section bars and the total card). */
 .segItem {
   border-radius: 6px;
 }
@@ -99,8 +99,9 @@
 
 .segActive,
 .segActive:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-active);
-  color: var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--dsw-tone-1) 14%, transparent);
+  color: var(--dsw-tone-1);
+  font-weight: 600;
 }
 
 .customRange {
@@ -118,10 +119,24 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* Trailing toolbar edge: the "as of" stamp sits immediately left of the
+   refresh action (it stamps the very data that button refreshes). */
+.toolbarEnd {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.asOf {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 /* Keep the remaining toolbar action at the trailing edge. */
 .refresh {
   flex: 0 0 auto;
-  margin-left: auto;
 }
 
 /* ── states ────────────────────────────────────────────────────────────── */
@@ -153,55 +168,97 @@
 
 /* ── numeric cards ─────────────────────────────────────────────────────── */
 
-/* The two long-valued cards bookend the row — total tokens leads it, the top
-   model closes it — each on a wider track than the four short numerics
-   between them. At the Plugins page's 960px content width that is six columns
-   on one row. */
+/* Six equal tracks: the overview row is one grid of six identical cards
+   (long value or not), so no card crowds its neighbours. At the Plugins
+   page's 960px content width that is six columns on one row. */
 .cards {
   display: grid;
-  grid-template-columns: 1.3fr repeat(4, 1fr) 1.3fr;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
 }
 
-/* Below the width where six cards hold their own, the grid folds to four
-   tracks and the two long cards take two each: they keep their extra width
-   instead of degrading to the numerics' size, and each row still fills. */
+/* Below the width where six cards hold their own, the grid folds to three
+   columns (two rows of three), then to two (three rows of two). */
 @media (max-width: 720px) {
   .cards {
-    grid-template-columns: repeat(4, 1fr);
-  }
-
-  .cards > :first-child,
-  .cards > :last-child {
-    grid-column: span 2;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 430px) {
   .cards {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
+/* Each stat card wears one accent hue (tone 1..6 → --dsw-tone-1..6): a 3px
+   accent bar on the left edge, the icon in a tinted badge, and a whisper of
+   the hue washing the top-left corner — the overview row reads in colour
+   instead of one gray register. --card-accent is set by the .cardToneN map
+   below; content sits above the wash via a z-index layer. */
 .card {
+  --card-accent: var(--dsw-alias-label-tertiary);
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 12px 14px;
+  padding: 14px 14px 12px 18px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 1px 2px var(--dsw-alias-bg-mask-2);
   min-width: 0;
 }
+
+.card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--card-accent);
+}
+
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--card-accent) 7%, transparent), transparent 60%);
+  pointer-events: none;
+}
+
+/* Content must paint above the corner wash (the ::after pseudo is the last
+   child, so it wins a same-layer paint order). */
+.card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.cardTone1 { --card-accent: var(--dsw-tone-1); }
+.cardTone2 { --card-accent: var(--dsw-tone-2); }
+.cardTone3 { --card-accent: var(--dsw-tone-3); }
+.cardTone4 { --card-accent: var(--dsw-tone-4); }
+.cardTone5 { --card-accent: var(--dsw-tone-5); }
+.cardTone6 { --card-accent: var(--dsw-tone-6); }
 
 .cardHead {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
 }
 
+/* Icon badge: the accent hue at 12% behind its own glyph. */
 .cardIcon {
-  color: var(--dsw-alias-label-tertiary);
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  padding: 5px;
+  border-radius: 7px;
+  color: var(--card-accent);
+  background: color-mix(in srgb, var(--card-accent) 12%, transparent);
   flex: 0 0 auto;
 }
 
@@ -213,10 +270,15 @@
   white-space: nowrap;
 }
 
+/* Values never wrap: a wrapped number defeats FitText's measurement (the
+   wrapped line is exactly as wide as its box) and reads as a layout break.
+   Oversized text shrinks instead — see FitText in TokenTotalPanel.tsx. */
 .cardValue {
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
   line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .cardValueSm {
@@ -237,11 +299,13 @@
 }
 
 /* A muted second line under a card value (the absolute cached-token volume
-   under the hit-rate percentage). */
+   under the hit-rate percentage). Same no-wrap rule as the value above. */
 .cardSub {
   color: var(--dsw-alias-label-tertiary);
   font-size: 11px;
   line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 /* ── sections / chart chrome ───────────────────────────────────────────── */
@@ -249,8 +313,13 @@
 .section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 1px 2px var(--dsw-alias-bg-mask-2);
 }
 
 .sectionHead {
@@ -261,16 +330,57 @@
   flex-wrap: wrap;
 }
 
+/* Section titles carry the same brand accent bar as the stat cards' tone
+   language, so every card heading is anchored the same way. */
 .sectionTitle {
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 15px;
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
 }
 
+.sectionTitle::before {
+  content: "";
+  width: 3px;
+  height: 13px;
+  border-radius: 2px;
+  background: var(--dsw-tone-1);
+  flex: 0 0 auto;
+}
+
+/* Header meta cluster right of a section title (trend cap note + curve
+   legend). Kept as one wrap-friendly row on a common baseline. */
+.headMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .trendNote {
   font-size: 13px;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* Heatmap and the token trend share ONE row — one card each, left and right.
+   Both columns stretch to a common height; the heatmap centres its SVG in the
+   taller partner. Below 720px the pair folds to a single column. */
+.duo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+@media (max-width: 720px) {
+  .duo {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .chartWrap {
@@ -287,85 +397,92 @@
      right edge. */
   overflow: hidden;
   min-width: 0;
+  /* In the duo row the heatmap card shares height with the trend card; the
+     grid centres itself in whatever slack the partner leaves. */
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
 }
 
 .heatmap {
   display: block;
-  /* The 364 cells each keep their own two-layer drop-shadow chain (see
-     `.heatCell`) — 728 blurs that the compositor would otherwise re-run on
-     every scroll repaint of the tile, which is what made scrolling this panel
-     drop frames while idle was clean (#4). Promoting the SVG onto its own
-     compositing layer takes that rasterization off the scroll path and leaves
-     the painted result untouched, so the cell depth stays as designed. Note
-     that the promotion is what does the work: `contain: paint` on its own
-     measured no better than no mitigation at all. */
+  margin: 0 auto;
+  /* The ~364 day cells are flat SVG rects (no per-cell filter), so there is no
+     blur chain left to re-rasterize — but promoting the SVG onto its own
+     compositing layer still keeps the whole grid off the scroll repaint path,
+     which is what made scrolling this panel drop frames while idle was clean
+     (#4). Cheap and invisible, so it stays. Note that the promotion is what
+     does the work: `contain: paint` on its own measured no better than no
+     mitigation at all. */
   transform: translateZ(0);
 }
 
 .heatLegend {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   font-size: 13px;
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* Axis labels drawn inside the heatmap SVG: the weekday column on the left and
+   the month strip along the bottom. SVG <text> takes `fill`, not `color`. */
+.heatAxis {
+  fill: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .heatCell {
   display: inline-block;
-  border-radius: 3px;
+  border-radius: 2px;
   /* No width/height here: the SVG cells carry their size as geometry
      attributes (x/y/width/height), and a CSS width/height would override
      those on SVG2 rects — pinning every cell to a fixed px and widening the
      visual gap. The legend swatches carry the same size inline, so both
-     always match the measured geom.size. */
-  /* Depth at this size, WITHOUT a per-cell backdrop-filter: the cells are SVG
-     geometry, where backdrop-filter is accepted by the CSSOM but changes
-     nothing on paint (measured on 364 live cells: the screenshot came out
-     byte-identical to no blur at all). What reads as a glass tile instead is
-     the translucent fill below — it lets the panel's own glass bed through —
-     carried by one hairline highlight over one soft under-shadow. */
-  filter:
-    drop-shadow(0 -0.5px 0 var(--dsw-heat-sheen))
-    drop-shadow(0 0.5px 0.8px var(--dsw-heat-shade));
+     always match the measured geom.size.
+     No filter either: the reference chart paints each tile as a flat, matte
+     rounded square, so a sheen/under-shadow would read as a smudge at this
+     cell size rather than depth. */
 }
 
-/* The five heat levels use DeepSeek's brand blue (#4D6BFE) as a fixed ramp,
-   light and dark variants below — never the theme accent, which can read
-   near-black against the base surface in dark mode. level0 (no data) is a
-   neutral empty cell. The cells are SVG <rect>s, so the color rides `fill`
+/* The five heat levels ride a fixed emerald ramp sampled pixel-for-pixel from
+   the reference chart (a GitHub-style green scale), with a darker variant for
+   dark mode below — never the theme accent, which can read near-black against
+   the base surface in dark mode. level0 (no data) is a neutral empty cell.
+   The fills are fully opaque: the reference tiles are solid, and mixing toward
+   transparent (the previous glass treatment) lightened every step and broke
+   the sampled ramp. The cells are SVG <rect>s, so the color rides `fill`
    (background is a no-op on SVG geometry) — but the legend swatches are HTML,
-   so both declarations stay in step.
-   Each level is mixed a little toward transparent so the bed shows through;
-   the amount is deliberately modest, because the ramp is a DATA encoding and
-   washing it out would cost readability. */
+   so both declarations stay in step. */
 .heatLevel0 {
-  fill: color-mix(in srgb, var(--dsw-heat-0) 82%, transparent);
-  background: color-mix(in srgb, var(--dsw-heat-0) 82%, transparent);
+  fill: var(--dsw-heat-0);
+  background: var(--dsw-heat-0);
 }
 
 .heatLevel1 {
-  fill: color-mix(in srgb, var(--dsw-heat-1) 82%, transparent);
-  background: color-mix(in srgb, var(--dsw-heat-1) 82%, transparent);
+  fill: var(--dsw-heat-1);
+  background: var(--dsw-heat-1);
 }
 
 .heatLevel2 {
-  fill: color-mix(in srgb, var(--dsw-heat-2) 82%, transparent);
-  background: color-mix(in srgb, var(--dsw-heat-2) 82%, transparent);
+  fill: var(--dsw-heat-2);
+  background: var(--dsw-heat-2);
 }
 
 .heatLevel3 {
-  fill: color-mix(in srgb, var(--dsw-heat-3) 82%, transparent);
-  background: color-mix(in srgb, var(--dsw-heat-3) 82%, transparent);
+  fill: var(--dsw-heat-3);
+  background: var(--dsw-heat-3);
 }
 
 .heatLevel4 {
-  fill: color-mix(in srgb, var(--dsw-heat-4) 82%, transparent);
-  background: color-mix(in srgb, var(--dsw-heat-4) 82%, transparent);
+  fill: var(--dsw-heat-4);
+  background: var(--dsw-heat-4);
 }
 
 .heatLevel5 {
-  fill: color-mix(in srgb, var(--dsw-heat-5) 82%, transparent);
-  background: color-mix(in srgb, var(--dsw-heat-5) 82%, transparent);
+  fill: var(--dsw-heat-5);
+  background: var(--dsw-heat-5);
 }
 
 /* ── daily trend ───────────────────────────────────────────────────────── */
@@ -521,7 +638,7 @@
   flex-direction: column;
   min-width: 0;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1);
   overflow: hidden;
 }
@@ -571,6 +688,29 @@
 
 .modelRow:last-child {
   border-bottom: none;
+}
+
+/* Share bar under a rank row's name: the row's slice of the section total,
+   drawn in the row's own colour (a 3px track, like the design mock). */
+.rowTrack {
+  height: 3px;
+  margin-top: 2px;
+  border-radius: 2px;
+  background: var(--dsw-alias-border-l1);
+  overflow: hidden;
+}
+
+.rowFill {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* Top-3 ranks read as a podium: the ordinal takes the warm accent instead of
+   the muted gray the tail ranks keep. */
+.rankList > .modelRow:nth-child(-n + 3) .modelRank {
+  color: var(--dsw-rank-top);
+  font-weight: 700;
 }
 
 /* "Other" aggregate row: the entire row is clickable to expand/collapse the
@@ -753,11 +893,6 @@
   padding-top: 4px;
 }
 
-.foot {
-  font-size: 13px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
 /* ── chart palette ──────────────────────────────────────────────────────── */
 
 /* Light variant (the theme's default): model colours are the reasonix
@@ -765,23 +900,32 @@
    white veil mixed in (color-mix 30% white) — the raw hues read dark and
    heavy on the light card surface, and the veil lifts lightness and dulls
    saturation the way a translucent white overlay would, keeping the hues
-   colourful instead of muddy. The heatmap ramp is DeepSeek's brand blue
-   (#4D6BFE) stepping from a pale tint to the full blue; the hit-rate curve
-   rides the same brand hue.
+   colourful instead of muddy. The heatmap ramp is a fixed emerald green
+   scale (GitHub-style activity heatmap), stepping from a near-white tint to
+   a deep green; the hit-rate curve rides the brand blue.
    Ranks 6-10 extend the reasonix five to ten (this plugin's addition): each
-   is picked to keep the ten hues apart on both themes. */
-.panel {
-  --dsw-heat-0: #ebedf0;
-  --dsw-heat-1: #dbe3ff;
-  --dsw-heat-2: #b7c5ff;
-  --dsw-heat-3: #8ea4ff;
-  --dsw-heat-4: #6884ff;
-  --dsw-heat-5: #4d6bfe;
-  /* Heatmap cell depth: a highlight above, a shade below. Light trays need
-     the stronger pair; the dark tray below lifts the shade instead. */
-  --dsw-heat-sheen: rgb(255 255 255 / 0.55);
-  --dsw-heat-shade: rgb(0 0 0 / 0.20);
+   is picked to keep the ten hues apart on both themes.
+   The palette must ALSO live on :root: tooltips are fixed portals on
+   document.body (see ChartTip), outside the panel subtree, and the inline
+   var(--dsw-chart-N) swatches they carry only resolve from :root. */
+:root, .panel {
+  --dsw-heat-0: #f4f5f5;
+  --dsw-heat-1: #daf6ea;
+  --dsw-heat-2: #c7f0df;
+  --dsw-heat-3: #82edc0;
+  --dsw-heat-4: #00b96b;
+  --dsw-heat-5: #00663b;
   --dsw-trend-line: #4d6bfe;
+  /* Overview-card tone accents (stat cards 1..6) and the podium ordinal.
+     Six hues, each picked to sit apart from both the chart set and the heat
+     ramp, at full strength so 12% badge tints stay visible on white. */
+  --dsw-tone-1: #4d6bfe;
+  --dsw-tone-2: #00b96b;
+  --dsw-tone-3: #e07b39;
+  --dsw-tone-4: #975bf1;
+  --dsw-tone-5: #0d8a8a;
+  --dsw-tone-6: #d34591;
+  --dsw-rank-top: #c46212;
   --dsw-chart-1: color-mix(in srgb, #0576ff 70%, white);
   --dsw-chart-2: color-mix(in srgb, #2f6f37 70%, white);
   --dsw-chart-3: color-mix(in srgb, #c46212 70%, white);
@@ -807,17 +951,23 @@
    (35% — dark surfaces need the extra lift), so segments read soft and
    bright instead of sinking into the background. */
 @media (prefers-color-scheme: dark) {
-  .panel {
-    --dsw-heat-0: #21262d;
-    --dsw-heat-1: #2f4bd0;
-    --dsw-heat-2: #4d6bfe;
-    --dsw-heat-3: #6e8bff;
-    --dsw-heat-4: #93aaff;
-    --dsw-heat-5: #c4d0ff;
-    /* Same depth pair, recalibrated: a dark tray swallows a light shade. */
-    --dsw-heat-sheen: rgb(255 255 255 / 0.30);
-    --dsw-heat-shade: rgb(0 0 0 / 0.50);
+  :root, .panel {
+    --dsw-heat-0: #1b211e;
+    --dsw-heat-1: #123a2a;
+    --dsw-heat-2: #17553a;
+    --dsw-heat-3: #1c7a4e;
+    --dsw-heat-4: #2fbf7c;
+    --dsw-heat-5: #7ef0b4;
     --dsw-trend-line: #7d95ff;
+    /* Dark tones are lifted versions of the light six: same identity hue,
+       brighter so 16% badge tints and 3px bars read on dark surfaces. */
+    --dsw-tone-1: #7d95ff;
+    --dsw-tone-2: #2fbf7c;
+    --dsw-tone-3: #e89a5c;
+    --dsw-tone-4: #b18cff;
+    --dsw-tone-5: #3bc5c5;
+    --dsw-tone-6: #f076ac;
+    --dsw-rank-top: #e08543;
     --dsw-chart-1: color-mix(in srgb, #0576ff 65%, white);
     --dsw-chart-2: color-mix(in srgb, #2f6f37 65%, white);
     --dsw-chart-3: color-mix(in srgb, #c46212 65%, white);
@@ -835,5 +985,15 @@
     --dsw-provider-4: color-mix(in srgb, #7b5ea7 65%, white);
     --dsw-provider-5: color-mix(in srgb, #b03a5b 65%, white);
     --dsw-provider-other: color-mix(in srgb, #576270 65%, white);
+  }
+
+  /* Dark surfaces swallow pale tints, so the card accents step up: badge
+     12% → 16%, corner wash 7% → 10%. */
+  .cardIcon {
+    background: color-mix(in srgb, var(--card-accent) 16%, transparent);
+  }
+
+  .card::after {
+    background: linear-gradient(135deg, color-mix(in srgb, var(--card-accent) 10%, transparent), transparent 60%);
   }
 }

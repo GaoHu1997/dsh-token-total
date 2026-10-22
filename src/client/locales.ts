@@ -43,6 +43,25 @@ export type TokenTotalKey =
   | 'heatmap'
   | 'heatLess'
   | 'heatMore'
+  | 'dow.mon'
+  | 'dow.tue'
+  | 'dow.wed'
+  | 'dow.thu'
+  | 'dow.fri'
+  | 'dow.sat'
+  | 'dow.sun'
+  | 'month.jan'
+  | 'month.feb'
+  | 'month.mar'
+  | 'month.apr'
+  | 'month.may'
+  | 'month.jun'
+  | 'month.jul'
+  | 'month.aug'
+  | 'month.sep'
+  | 'month.oct'
+  | 'month.nov'
+  | 'month.dec'
   | 'dailyTrend'
   | 'hourlyTrend'
   | 'trendLimited'
@@ -112,6 +131,25 @@ export const en: Record<TokenTotalKey, string> = {
   heatmap: 'Activity heatmap',
   heatLess: 'Less',
   heatMore: 'More',
+  'dow.mon': 'Mon',
+  'dow.tue': 'Tue',
+  'dow.wed': 'Wed',
+  'dow.thu': 'Thu',
+  'dow.fri': 'Fri',
+  'dow.sat': 'Sat',
+  'dow.sun': 'Sun',
+  'month.jan': 'Jan',
+  'month.feb': 'Feb',
+  'month.mar': 'Mar',
+  'month.apr': 'Apr',
+  'month.may': 'May',
+  'month.jun': 'Jun',
+  'month.jul': 'Jul',
+  'month.aug': 'Aug',
+  'month.sep': 'Sep',
+  'month.oct': 'Oct',
+  'month.nov': 'Nov',
+  'month.dec': 'Dec',
   dailyTrend: 'Daily token trend',
   hourlyTrend: 'Hourly token trend',
   trendLimited: 'Showing the latest {n} days',
@@ -182,6 +220,25 @@ export const zh: Record<TokenTotalKey, string> = {
   heatmap: '活跃热力图',
   heatLess: '较少',
   heatMore: '较多',
+  'dow.mon': '周一',
+  'dow.tue': '周二',
+  'dow.wed': '周三',
+  'dow.thu': '周四',
+  'dow.fri': '周五',
+  'dow.sat': '周六',
+  'dow.sun': '周日',
+  'month.jan': '1月',
+  'month.feb': '2月',
+  'month.mar': '3月',
+  'month.apr': '4月',
+  'month.may': '5月',
+  'month.jun': '6月',
+  'month.jul': '7月',
+  'month.aug': '8月',
+  'month.sep': '9月',
+  'month.oct': '10月',
+  'month.nov': '11月',
+  'month.dec': '12月',
   dailyTrend: '按天 Token 趋势',
   hourlyTrend: '按小时 Token 趋势',
   trendLimited: '仅显示最近 {n} 天',
@@ -252,6 +309,25 @@ export const zhTW: Record<TokenTotalKey, string> = {
   heatmap: '活躍熱力圖',
   heatLess: '較少',
   heatMore: '較多',
+  'dow.mon': '週一',
+  'dow.tue': '週二',
+  'dow.wed': '週三',
+  'dow.thu': '週四',
+  'dow.fri': '週五',
+  'dow.sat': '週六',
+  'dow.sun': '週日',
+  'month.jan': '1月',
+  'month.feb': '2月',
+  'month.mar': '3月',
+  'month.apr': '4月',
+  'month.may': '5月',
+  'month.jun': '6月',
+  'month.jul': '7月',
+  'month.aug': '8月',
+  'month.sep': '9月',
+  'month.oct': '10月',
+  'month.nov': '11月',
+  'month.dec': '12月',
   dailyTrend: '每日 Token 趨勢',
   hourlyTrend: '每小時 Token 趨勢',
   trendLimited: '僅顯示最近 {n} 天',

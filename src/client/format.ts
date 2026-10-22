@@ -68,13 +68,15 @@ export function shortDay(day: string): string {
   return `${Number(m)}/${Number(d)}`
 }
 
-/** X-axis label for a trend bucket key. Day mode keeps the short date; hour
- *  mode names the day at 00:00 (so a three-day span keeps its day boundaries
- *  readable) and the hour everywhere else. */
-export function bucketAxisLabel(key: string, granularity: 'day' | 'hour'): string {
-  if (granularity === 'day') return shortDay(key)
-  const hour = key.slice(11, 13)
-  return hour === '00' ? shortDay(key.slice(0, 10)) : `${hour}:00`
+/** X-axis label for a trend bucket key. `mode` is what the axis READS AS,
+ *  chosen by the caller from the window it covers:
+ *  - 'hour' — a single-day hourly span (今日): the date is constant, so the
+ *    axis shows the bare clock ("8:00");
+ *  - 'day' — anything spanning several days (3天 hourly, any daily range):
+ *    the axis shows the short date ("10/22"); on multi-day hourly spans one
+ *    label marks each day. The tooltip still carries the full date + hour. */
+export function bucketAxisLabel(key: string, mode: 'day' | 'hour'): string {
+  return mode === 'hour' ? `${Number(key.slice(11, 13))}:00` : shortDay(key)
 }
 
 /** Tooltip title for a trend bucket key: the date in day mode, date + hour

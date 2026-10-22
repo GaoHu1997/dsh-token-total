@@ -104,6 +104,9 @@ export function aggregateSamples(
   const from = filter.from
   const to = filter.to
   const buckets = bucketsInRange(from, to, granularity)
+  // Materialize once: the qualified-name pre-pass below and the main fold
+  // both walk the samples, and a generator input may only be consumed once.
+  const all = [...samples]
   const out: TokenTotalRange = {
     from,
     to,
@@ -151,7 +154,11 @@ export function aggregateSamples(
   const bucketCacheHit = new Map<string, number>()
   const bucketCacheMiss = new Map<string, number>()
 
-  for (const sample of samples) {
+  // One model, one row: every qualified routing name folds onto its bare
+  // model key before the first aggregation (see aliasQualifiedModels).
+  const modelAlias = aliasQualifiedModels(new Set(all.map((sample) => modelKeyOf(sample))))
+
+  for (const sample of all) {
     const bucket = bucketOf(sample, from, to, granularity)
     if (bucket === null) continue
     if (sample.turn) {
@@ -192,7 +199,8 @@ export function aggregateSamples(
     out.cacheMiss += missSide
     const modelRef = sample.model && sample.model !== '' ? sample.model : '(unknown)'
     const provider = providerOf(modelRef)
-    const model = normalizeModelName(sample.modelName?.trim() || modelNameOf(modelRef))
+    const modelBase = modelKeyOf(sample)
+    const model = modelAlias.get(modelBase) ?? modelBase
     const sources = modelProviders.get(model) ?? new Set<string>()
     sources.add(provider)
     modelProviders.set(model, sources)
@@ -270,6 +278,49 @@ export function aggregateSamples(
     for (const p of out.providers) p.percent = (p.tokens / out.tokens) * 100
   }
   return out
+}
+
+/** The aggregation key of one sample: the resolved display name when the
+ *  host resolved one, else the bare model ref — normalized like every
+ *  display name so the key is stable across routes and refreshes. */
+function modelKeyOf(sample: UsageSample): string {
+  const modelRef = sample.model && sample.model !== '' ? sample.model : '(unknown)'
+  return normalizeModelName(sample.modelName?.trim() || modelNameOf(modelRef))
+}
+
+/**
+ * Qualified-name aliases: "workbuddy-ai-plugin/deepseek-v4.1-flash" and
+ * "deepseek-v4.1-flash" are the same model reached through a routing
+ * namespace, so a name containing "/" merges onto the LONGEST suffix after a
+ * "/" that is itself a model key in this dataset (chains like a/b/c → b/c → c
+ * resolve transitively). The merge is dataset-relative on purpose: a slash
+ * that names no bare model in the data ("GPT/6.1 sol" beside "gpt-6.1-sol")
+ * is a genuinely different name and stays its own row — see the
+ * distinct-slashes case in tests/model-aggregation.test.mjs.
+ */
+function aliasQualifiedModels(names: Set<string>): Map<string, string> {
+  const alias = new Map<string, string>()
+  for (const name of names) {
+    if (!name.includes('/')) continue
+    const parts = name.split('/')
+    for (let i = 1; i < parts.length; i++) {
+      const suffix = parts.slice(i).join('/')
+      if (names.has(suffix)) {
+        alias.set(name, suffix)
+        break
+      }
+    }
+  }
+  for (const name of [...alias.keys()]) {
+    let target = alias.get(name)!
+    const seen = new Set([name])
+    while (alias.has(target) && !seen.has(target)) {
+      seen.add(target)
+      target = alias.get(target)!
+    }
+    alias.set(name, target)
+  }
+  return alias
 }
 
 function modelsSorted(

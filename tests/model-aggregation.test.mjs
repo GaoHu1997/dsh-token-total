@@ -24,6 +24,37 @@ test('equivalent display names merge, distinct versions/suffixes/slashes do not'
   assert.equal(normalizeModelName('  '), '(unknown)')
 })
 
+test('qualified plugin/routing names fold onto the bare model when its suffix is present', () => {
+  const samples = [
+    // The user-reported case: a plugin-qualified name and the bare name of
+    // the same model are one row.
+    sample('wb/deepseek-v4.1-flash', 'workbuddy-ai-plugin/deepseek-v4.1-flash'),
+    sample('ds/deepseek-v4.1-flash', 'deepseek-v4.1-flash'),
+    // a/b/c chains through b/c onto c when every step names a model here.
+    sample('r/claude-4', 'openrouter/anthropic/claude-4'),
+    sample('a/claude-4', 'anthropic/claude-4'),
+    sample('c/claude-4', 'claude-4'),
+    // A slash that names no bare model in the data is a different name.
+    sample('z/gpt-6.1-sol', 'GPT/6.1 sol'),
+    sample('w/gpt-6.1-sol', 'gpt-6.1-sol'),
+  ]
+  for (const granularity of ['day', 'hour']) {
+    const stats = aggregateSamples(samples, { from: day, to: day }, granularity)
+    assert.deepEqual(Object.fromEntries(stats.models.map(m => [m.model, m.tokens])), {
+      'claude-4': 120,
+      'deepseek-v4.1-flash': 80,
+      'gpt-6.1-sol': 40,
+      'gpt/6.1-sol': 40,
+    })
+    assert.deepEqual(stats.models.find(m => m.model === 'deepseek-v4.1-flash').providers, ['ds', 'wb'])
+    assert.deepEqual(stats.models.find(m => m.model === 'claude-4').providers, ['a', 'c', 'r'])
+    for (const bucket of stats.daily) {
+      assert.equal(sum(bucket.byModel), bucket.total)
+      assert.ok(Object.keys(bucket.byModel).every(key => !key.includes('workbuddy') && !key.includes('openrouter')))
+    }
+  }
+})
+
 test('ranking, cache counters and day/hour trends all aggregate by DISPLAY name', () => {
   const samples = [
     sample('a/opaque-id-1', 'gpt-6.1-sol'),
