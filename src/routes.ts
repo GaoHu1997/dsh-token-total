@@ -18,7 +18,8 @@ import type { UsageStore, UsageDayRow, UsageHourRow } from './store.ts'
 import type { UsageCollector } from './collector.ts'
 import { aggregateSamples } from './query.ts'
 import type { Granularity, UsageSample } from './query.ts'
-import type { BackfillStatus, SessionUsageRequest, TokenTotalRange, TokenTotalRequest } from './wire.ts'
+import type { BackfillStatus, SessionUsageDetail, SessionUsageRequest, TokenTotalRange, TokenTotalRequest } from './wire.ts'
+import { buildSessionUsageDetail } from './session-detail.ts'
 import { UsageError, readJsonBody, writeError, writeJson } from './wire.ts'
 import type { SessionUsageService } from './session-usage.ts'
 import { createTrustFence, type TrustFence, type TrustInputs } from './trust-fence.ts'
@@ -228,6 +229,14 @@ export function buildUsageRoute(ctx: Context, deps: RoutesDeps): UsageWebRoute {
         writeJson(res, { ok: true, value })
         return
       }
+      if (method === 'POST' && path === '/token-total/api/session-detail') {
+        const body = (await readJsonBody(req)) as Partial<SessionUsageRequest>
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : ''
+        if (sessionId === '' || sessionId.length > 200) throw new UsageError(400, 'token total: session needs a valid sessionId')
+        const value = await buildSessionUsageDetail(deps.persistence(), deps.sessions(), sessionId, ctx)
+        writeJson(res, { ok: true, value })
+        return
+      }
       if (method === 'POST' && path === '/token-total/api/status') {
         writeJson(res, { ok: true, value: deps.collector.status })
         return
@@ -260,4 +269,4 @@ export function buildUsageRoute(ctx: Context, deps: RoutesDeps): UsageWebRoute {
   return { kind: 'prefix', path: '/token-total/api', handler }
 }
 
-export type { BackfillStatus, TokenTotalRange, TokenTotalRequest, SessionUsageRequest }
+export type { BackfillStatus, TokenTotalRange, TokenTotalRequest, SessionUsageRequest, SessionUsageDetail }

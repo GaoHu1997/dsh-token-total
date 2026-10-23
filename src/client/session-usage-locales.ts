@@ -1,0 +1,50 @@
+/** Session Usage view translations, independent of the global dashboard. */
+export const SESSION_USAGE_NS = 'sessionUsage'
+export const usageZh = {
+  tab: '用量', requests: '请求数', tokens: '总 tokens', hit: '命中率', first: '平均首 token', speed: 'token 速度',
+  input: '入', output: '出', read: '读', write: '写',
+  requestsCount: '请求数量', inputFull: '输入', outputFull: '输出', readFull: '缓存读取', writeFull: '缓存写入',
+  cacheHit: '缓存命中', compaction: '压缩调用', reqTimes: '个请求',
+  children: '子代理', session: '会话', models: '按模型', model: '模型',
+  records: '请求记录', expand: '全部展开', collapse: '全部收起', loading: '正在读取会话用量…',
+  empty: '本会话还没有请求记录', noChildren: '暂无子代理', noModels: '暂无模型用量',
+  scope: '本会话及所有子代理 · 历史日志累计',
+  note: '统计包含本会话与全部后代的独立请求、重试和压缩调用，不重复计算继承历史。首 token 与速度仅使用已记录的时间信息，缺失时显示 —。',
+  failedLoad: '用量读取失败，已保留上次结果。', retry: '重新读取', completed: '已完成', running: '进行中', failed: '失败', interrupted: '已中断',
+  main: '主会话', turn: '轮', step: '步', started: '开始', duration: '耗时', firstDetail: '首 token',
+  provider: '供应商', status: '状态', exact: '完整 token 数',
+  answering: '正在回答...', firstWait: '首字耗时', sec: '秒', tokenWord: 'token', perSec: 'token/秒',
+  cacheShort: '缓存', avgCache: '平均缓存', avgRate: '平均速率', inProgress: '个进行中',
+}
+export type SessionUsageKey = keyof typeof usageZh
+export const usageEn: Record<SessionUsageKey, string> = {
+  tab: 'Usage', requests: 'Requests', tokens: 'Total tokens', hit: 'Cache hit rate', first: 'Avg. first token', speed: 'Token speed',
+  input: 'In', output: 'Out', read: 'Read', write: 'Write',
+  requestsCount: 'Requests', inputFull: 'Input', outputFull: 'Output', readFull: 'Cache read', writeFull: 'Cache write',
+  cacheHit: 'cache hits', compaction: 'Compaction', reqTimes: 'requests',
+  children: 'Subagents', session: 'Session', models: 'By model', model: 'Model',
+  records: 'Request log', expand: 'Expand all', collapse: 'Collapse all', loading: 'Reading session usage…',
+  empty: 'No requests in this session yet', noChildren: 'No subagents yet', noModels: 'No model usage yet',
+  scope: 'This session and all subagents · Historical log totals',
+  note: 'Includes independent requests, retries and compaction calls from this session and all descendants, without counting inherited history twice. Timing uses recorded timestamps only; missing values appear as —.',
+  failedLoad: 'Could not read usage. The last successful result is preserved.', retry: 'Retry', completed: 'Completed', running: 'Running', failed: 'Failed', interrupted: 'Interrupted',
+  main: 'Main session', turn: 'Turn', step: 'Step', started: 'Started', duration: 'Duration', firstDetail: 'First token',
+  provider: 'Provider', status: 'Status', exact: 'Exact token count',
+  answering: 'answering...', firstWait: 'first token', sec: 's', tokenWord: 'token', perSec: 'token/s',
+  cacheShort: 'cache', avgCache: 'avg cache', avgRate: 'avg rate', inProgress: 'in progress',
+}
+export const usageZhTW: Record<SessionUsageKey, string> = {
+  ...usageZh,
+  tab: '用量', requests: '請求數', tokens: '總 tokens', hit: '命中率', first: '平均首 token', speed: 'token 速度',
+  input: '入', output: '出', read: '讀', write: '寫',
+  requestsCount: '請求數量', inputFull: '輸入', outputFull: '輸出', readFull: '快取讀取', writeFull: '快取寫入',
+  cacheHit: '快取命中', compaction: '壓縮呼叫', reqTimes: '個請求',
+  children: '子代理', session: '會話', models: '按模型', records: '請求記錄', expand: '全部展開', collapse: '全部收起',
+  loading: '正在讀取會話用量…', empty: '本會話還沒有請求記錄', noChildren: '暫無子代理', noModels: '暫無模型用量',
+  scope: '本會話及所有子代理 · 歷史日誌累計',
+  note: '統計包含本會話與全部後代的獨立請求、重試和壓縮呼叫，不重複計算繼承歷史。首 token 與速度僅使用已記錄的時間資訊，缺失時顯示 —。',
+  failedLoad: '用量讀取失敗，已保留上次結果。', retry: '重新讀取', completed: '已完成', running: '進行中', failed: '失敗', interrupted: '已中斷',
+  main: '主會話', turn: '輪', step: '步', started: '開始', duration: '耗時', firstDetail: '首 token', provider: '供應商', status: '狀態', exact: '完整 token 數',
+  answering: '正在回答...', firstWait: '首字耗時', sec: '秒', tokenWord: 'token', perSec: 'token/秒',
+  cacheShort: '快取', avgCache: '平均快取', avgRate: '平均速率', inProgress: '個進行中',
+}

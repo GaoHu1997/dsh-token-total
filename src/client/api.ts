@@ -11,7 +11,7 @@
  * prefix-stripping proxy; the host's own route key stays absolute
  * (`/token-total/api` in src/routes.ts), because only the browser half is relative.
  */
-import type { BackfillStatus, SessionUsageTree, TokenTotalRange, TokenTotalRequest } from '../wire.ts'
+import type { BackfillStatus, SessionUsageDetail, SessionUsageTree, TokenTotalRange, TokenTotalRequest } from '../wire.ts'
 
 /** One wire failure. */
 export class UsageApiError extends Error {
@@ -28,13 +28,14 @@ interface WireResponse<T> {
   value: T
 }
 
-async function post<T>(method: string, body: unknown): Promise<T> {
+async function post<T>(method: string, body: unknown, signal?: AbortSignal): Promise<T> {
   let res: Response
   try {
     res = await fetch(`token-total/api/${method}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     })
   } catch (err) {
     throw new UsageApiError('network', err instanceof Error ? err.message : String(err))
@@ -72,4 +73,9 @@ export async function rebuildStats(): Promise<BackfillStatus> {
  *  cost visible. */
 export async function fetchSessionUsage(sessionId: string): Promise<SessionUsageTree> {
   return post<SessionUsageTree>('session', { sessionId })
+}
+
+/** Log-owned requests and live route states for the per-session Usage view. */
+export async function fetchSessionDetail(sessionId: string, signal?: AbortSignal): Promise<SessionUsageDetail> {
+  return post<SessionUsageDetail>('session-detail', { sessionId }, signal)
 }

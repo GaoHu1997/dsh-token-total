@@ -38,6 +38,8 @@ import { ContextUsageEntry, CONTEXT_LOCALE_NS, CONTEXT_LOCALES } from './Context
 import { installContextTakeover } from './context-takeover.ts'
 import { LOCALE_NS, en, zh, zhTW, type TokenTotalKey } from './locales.ts'
 import { isCompatibleGlass, whenGlassReady } from './glass.ts'
+import { SessionUsageView } from './SessionUsageView.tsx'
+import { SESSION_USAGE_NS, usageEn, usageZh, usageZhTW, type SessionUsageKey } from './session-usage-locales.ts'
 import css from './TokenTotalPanel.module.css'
 
 /** This bundle's npm package name — the key the Plugins page matches on. */
@@ -77,6 +79,7 @@ export type TokenTotalPanelPageProps = PropsLocale<typeof LOCALE_NS> & {
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     'tokenTotal': TokenTotalKey
+    'sessionUsage': SessionUsageKey
   }
 }
 
@@ -172,7 +175,12 @@ export function apply(ctx: Context): void {
     const offZhTw = ctx.locale.register(LOCALE_NS, 'zh-TW', zhTW)
     const offContext = Object.entries(CONTEXT_LOCALES).map(([locale, dict]) =>
       ctx.locale.register(CONTEXT_LOCALE_NS, locale, dict as Record<string, string>))
-    return () => { offZh(); offEn(); offZhTw(); for (const off of offContext) off() }
+    const offSession = [
+      ctx.locale.register(SESSION_USAGE_NS, 'zh', usageZh),
+      ctx.locale.register(SESSION_USAGE_NS, 'en', usageEn),
+      ctx.locale.register(SESSION_USAGE_NS, 'zh-TW', usageZhTW),
+    ]
+    return () => { offZh(); offEn(); offZhTw(); for (const off of [...offContext, ...offSession]) off() }
   }, 'dsh-token-total: dictionaries')
 
   // Join the background plugin's frosted-glass sheet when it is installed,
@@ -273,6 +281,17 @@ export function apply(ctx: Context): void {
     label: () => t('nav'),
     locale: LOCALE_NS,
   }, StatsPanelIcon))
+
+  // Native session-scoped View: the host owns its tab, selection and composer.
+  // Waiting for declaration keeps older hosts without this seat harmless.
+  const sessionT = ctx.locale.bind(SESSION_USAGE_NS)
+  ctx.slots.inject('conversation.view', () => ctx.slots.register({
+    name: 'conversation.view',
+    id: 'token-total-usage',
+    order: 20,
+    label: () => sessionT('tab'),
+    locale: SESSION_USAGE_NS,
+  }, SessionUsageView))
 
   // The bottom-bar takeover: shadow the official stats pills (same id, lower
   // priority — the slot's lowest live entry renders) with this plugin's

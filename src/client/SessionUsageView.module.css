@@ -1,0 +1,117 @@
+/* A light, self-contained Usage surface. Tables fit the available width:
+ * no horizontal scroll containers, fixed column contracts, titles for names.
+ * Stat cards follow the reference dashboard: tinted left edge + icon chip,
+ * label, big value, small subtitle. Request log folds by conversation turn. */
+.scroll { height:100%; min-height:0; overflow-y:auto; background:#ffffff; color:#252936; color-scheme:light; container-type:inline-size; }
+.page { box-sizing:border-box; width:100%; max-width:1160px; margin:0 auto; padding:24px 26px 32px; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; font-size:13px; }
+.page * { box-sizing:border-box; }
+.scope { color:#8790a3; font-size:11px; margin:0 0 14px; }
+.stats { display:grid; gap:12px; margin-bottom:18px; }
+.statRow { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.stat { min-width:0; position:relative; overflow:hidden; background:#fff; border:1px solid #e4e7ee; border-left:4px solid var(--tone); border-radius:12px; padding:12px 16px 11px; }
+.statHead { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.statIcon { display:flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:10px; color:#fff; background:linear-gradient(135deg, var(--tone), var(--tone-soft)); flex-shrink:0; box-shadow:0 3px 8px var(--tone-soft); }
+.statMark { position:absolute; right:-14px; bottom:-18px; width:92px; height:92px; color:var(--tone); pointer-events:none; }
+.statLabel { font-size:12px; color:#7d8495; }
+.statValue { display:block; font-size:25px; font-weight:650; letter-spacing:-0.5px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.statSub { display:block; margin-top:5px; font-size:11px; color:#939aac; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.toneBlue { --tone:#4f79f6; --tone-soft:#eaf0fe; }
+.tonePurple { --tone:#8b5cf6; --tone-soft:#f1ebfe; }
+.toneGreen { --tone:#18a97b; --tone-soft:#e5f6f0; }
+.toneOrange { --tone:#e8892c; --tone-soft:#fcf1e4; }
+.toneTeal { --tone:#16a4b8; --tone-soft:#e4f5f8; }
+.tonePink { --tone:#d9538c; --tone-soft:#fbeaf1; }
+.card { min-width:0; background:#fff; border:1px solid #e4e7ee; border-radius:12px; margin-bottom:18px; overflow:hidden; }
+.cardHead { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:54px; padding:15px 18px; border-bottom:1px solid #eef0f4; }
+.cardHead h2 { font-size:14px; font-weight:600; margin:0; }
+.cardHead > span { display:flex; gap:7px; align-items:center; font-size:11px; }
+.count { display:inline-flex; align-items:center; justify-content:center; min-width:21px; padding:2px 6px; font-size:10px; color:#8b93a3; background:#f3f5f8; border-radius:5px; margin-left:5px; font-weight:500; }
+.mid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:18px; align-items:stretch; }
+.mid .card { height:100%; margin-bottom:0; }
+.mid { margin-bottom:18px; }
+.table { border-collapse:collapse; width:100%; table-layout:fixed; font-size:11px; }
+.table th { color:#929aaa; font-weight:500; padding:12px 5px; text-align:right; vertical-align:middle; line-height:1.3; overflow-wrap:anywhere; }
+.table td { padding:13px 5px; text-align:right; border-top:1px solid #eef0f4; color:#626c80; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.table th:first-child,.table td:first-child { text-align:left; padding-left:16px; }
+.table th:last-child,.table td:last-child { padding-right:16px; }
+.childName { width:28%; }
+.childRequests { width:11%; }
+.modelName { width:30%; }
+.modelRequests { width:11%; }
+.modelHit { width:16%; }
+.ellipsis { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#394354; }
+/* Gray provider label under a model name shown by several rows (同名模型). */
+.modelProvider { display:block; margin-top:2px; font-size:10px; color:#939aaa; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.number { font-variant-numeric:tabular-nums; }
+.speedCell { display:inline-flex; align-items:baseline; gap:3px; white-space:nowrap; }
+.speedCell small { font-size:9px; color:#929aaa; }
+.good { color:#21a17b; }
+.warn { color:#d69a21; }
+.bad { color:#e06571; }
+.live { color:#169bb3; }
+.muted { color:#939aaa; }
+.empty { margin:0; padding:28px 18px; color:#9aa2b1; font-size:12px; text-align:center; }
+.action { color:#818b9e; background:none; border:0; padding:3px 0; font:inherit; font-size:11px; cursor:pointer; }
+.action:hover { color:#279cb6; }
+.action:focus-visible,.turnHead:focus-visible { outline:2px solid #2ab1c6; outline-offset:-2px; }
+.turnList { padding:0 14px 14px; }
+.turn { margin-top:10px; border:1px solid #e7eaf0; border-radius:9px; background:#fff; overflow:hidden; }
+.turnHead { display:grid; grid-template-columns:12px minmax(0,1fr) auto; align-items:center; gap:12px; padding:13px 14px; width:100%; text-align:left; background:#f8f9fc; border:0; cursor:pointer; color:#616c7f; font:inherit; font-size:11px; }
+.chevron { color:#99a1af; transition:transform 0.2s; }
+.rotated { transform:rotate(90deg); }
+.turnTitle { display:flex; align-items:center; gap:6px; min-width:0; font-size:12px; font-weight:600; color:#394354; }
+/* Turn topic is the group title now (the page header owns the session name),
+ * so it carries the primary text color and truncates before the metrics. */
+.turnTopic { min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+/* A subagent's turns look like this session's turns apart from the agent tag;
+ * the tag keeps the full session name in its tooltip. */
+.turnAgent { flex:none; padding:1px 6px; border-radius:5px; background:#e9edf4; color:#6f7889; font-size:10px; font-weight:500; }
+.turnSummary { display:flex; gap:5px; align-items:center; white-space:nowrap; }
+.turnSummary > span:last-child { margin-left:8px; }
+.turnBody { border-top:1px solid #eef0f4; }
+.turnBody[hidden] { display:none; }
+/* A request row is one line: time, what answered, and its metrics pinned to the
+ * row end. The metrics never wrap; they truncate with a tooltip before the head
+ * gives up its model name. */
+.turnRequest { display:grid; grid-template-columns:64px minmax(0,1fr) auto; align-items:center; gap:12px; padding:10px 16px; border-top:1px solid #f3f5f9; }
+.turnRequest:first-child { border-top:0; }
+.turnRequestHead { display:flex; align-items:center; gap:8px; font-size:11px; color:#616c7f; min-width:0; }
+.requestTime { color:#9aa3b3; font-variant-numeric:tabular-nums; flex-shrink:0; }
+.statusDot { width:7px; height:7px; border-radius:50%; background:currentColor; flex-shrink:0; }
+.routeDot { width:6px; height:6px; border-radius:50%; background:#21a17b; flex-shrink:0; }
+.whale { color:#4d6bfe; flex-shrink:0; }
+.recordModel { min-width:0; display:flex; align-items:center; gap:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#394354; font-weight:500; }
+.routeText { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#8b93a4; flex-shrink:1; }
+.effort { white-space:nowrap; color:#9aa3b3; background:#f1f3f7; border-radius:5px; padding:1px 6px; }
+.recordMeta { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right; font-size:10px; color:#949cab; font-variant-numeric:tabular-nums; }
+.note { font-size:10px; line-height:1.7; color:#9aa3b3; margin:0; }
+.error { background:#fff4f1; color:#b86751; border:1px solid #f4d8ce; border-radius:9px; padding:12px 16px; margin-bottom:16px; font-size:12px; display:flex; gap:16px; justify-content:space-between; }
+@container (max-width:1050px) {
+  .mid { grid-template-columns:minmax(0,1fr); }
+  .statRow { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .statValue { font-size:23px; }
+  .table { font-size:12px; }
+  .childName { width:34%; }
+}
+@container (max-width:700px) {
+  .page { padding:18px 14px 24px; }
+  .stat { padding:12px 12px 11px; }
+  .statValue { font-size:20px; }
+  .table { font-size:10px; }
+  .table th,.table td { padding:10px 3px; }
+  .table th:first-child,.table td:first-child { padding-left:10px; }
+  .table th:last-child,.table td:last-child { padding-right:10px; }
+  .childName { width:25%; }
+  .childRequests { width:11%; }
+  .modelName { width:25%; }
+  .modelRequests { width:11%; }
+  .modelHit { width:17%; }
+  .turnHead { gap:8px; padding:11px 10px; }
+  .turnSummary { grid-column:2; font-size:10px; }
+  .turnRequest { grid-template-columns:56px minmax(120px,1fr) auto; gap:8px; padding:10px; }
+  .turnRequestHead { gap:6px; }
+  .routeText { display:none; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .chevron { transition:none; }
+}

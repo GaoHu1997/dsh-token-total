@@ -233,6 +233,8 @@ body{
 .model-cell{width:auto}
 .ellipsis{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t1);cursor:default}
 .ellipsis .tag{color:var(--t3);font-size:11px}
+/* 同名模型（显示名称相同）在名称下方用灰色小字标明供应商 */
+.model-provider{display:block;margin-top:2px;font-size:10px;color:var(--t3)}
 .pct{font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums}
 .p-good{color:var(--green)}
 .p-mid{color:var(--amber)}
@@ -441,14 +443,27 @@ body{
           </tr></thead>
           <tbody>
             <tr>
-              <td>deepseek-v4-flash</td><td class="num">11</td><td class="num">36K</td><td class="num">2.6K</td>
+              <td><span class="ellipsis" title="deepseek-v4-flash">DeepSeek V4 Flash</span></td><td class="num">11</td><td class="num">36K</td><td class="num">2.6K</td>
               <td class="num">61K</td><td class="num">0</td>
               <td class="num"><span class="pct p-mid">62.5%</span></td>
             </tr>
             <tr>
-              <td>MiniMax-M3</td><td class="num">9</td><td class="num">9.3K</td><td class="num">4.2K</td>
+              <td><span class="ellipsis" title="MiniMax-M3">MiniMax M3</span></td><td class="num">9</td><td class="num">9.3K</td><td class="num">4.2K</td>
               <td class="num">83K</td><td class="num">0</td>
               <td class="num"><span class="pct p-good">89.9%</span></td>
+            </tr>
+            <!-- 同名模型：两个路由 id 的显示名称相同，名称下方灰色小字标明供应商 -->
+            <tr>
+              <td><span class="ellipsis" title="gpt-6.1-sol">GPT 6.1 Sol</span><small class="model-provider">GitHub Models</small></td>
+              <td class="num">4</td><td class="num">8.2K</td><td class="num">920</td>
+              <td class="num">20K</td><td class="num">0</td>
+              <td class="num"><span class="pct p-mid">71.0%</span></td>
+            </tr>
+            <tr>
+              <td><span class="ellipsis" title="gpt-6-1-sol">GPT 6.1 Sol</span><small class="model-provider">LinuxDO</small></td>
+              <td class="num">3</td><td class="num">5.1K</td><td class="num">640</td>
+              <td class="num">12K</td><td class="num">0</td>
+              <td class="num"><span class="pct p-mid">70.1%</span></td>
             </tr>
           </tbody>
         </table>

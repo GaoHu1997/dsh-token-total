@@ -136,6 +136,62 @@ export interface SessionUsageRequest {
   sessionId: string
 }
 
+/** Detailed per-session usage view used by the Usage tab. */
+export interface SessionUsageDetail {
+  sessionId: string
+  totals: SessionUsageTotals
+  requests: number
+  averageFirstTokenMs: number | null
+  tokensPerSecond: number | null
+  subagents: Array<{
+    sessionId: string
+    name: string
+    totals: SessionUsageTotals
+    requests: number
+    averageFirstTokenMs: number | null
+    tokensPerSecond: number | null
+  }>
+  models: Array<{
+    /** Raw model id from the historical route. Stays the row key and the
+     *  fallback label (also the tooltip) when no display name is resolved. */
+    model: string
+    /** The model selector's display name for this model, resolved host-side
+     *  from the llm service metadata. Optional so an older host (or an
+     *  unresolvable route) still serves a valid payload. */
+    name?: string
+    /** Display names (raw ids when unknown) of every provider that served this
+     *  model in the session, first-seen order. The by-model card shows these in
+     *  gray when two rows end up sharing one display name. */
+    providers?: string[]
+    totals: SessionUsageTotals
+    requests: number
+  }>
+  records: Array<{
+    id: string
+    sessionId: string
+    sessionName: string
+    turn: number
+    step: number
+    startedAt: number
+    finishedAt: number | null
+    provider: string
+    model: string
+    status: 'running' | 'completed' | 'failed' | 'interrupted'
+    totals: SessionUsageTotals
+    firstTokenMs: number | null
+    tokensPerSecond: number | null
+    turnName: string
+    effort: string
+  }>
+  routes: Array<{
+    id: string
+    provider: string
+    name: string
+    model: string
+    status: 'idle' | 'running' | 'completed' | 'failed'
+  }>
+}
+
 /** The backfill (historical session scan) progress state. */
 export interface BackfillStatus {
   running: boolean
