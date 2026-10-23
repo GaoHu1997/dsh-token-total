@@ -62,7 +62,9 @@ export function indexOfDay(day: string): number {
 }
 
 export function shortDay(day: string): string {
-  const parts = day.split('-')
+  // Bucket keys may carry an hour suffix ("YYYY-MM-DDTHH"); only the date
+  // prefix is a date — Number('22T14') is NaN and used to render "10/NaN".
+  const parts = day.slice(0, 10).split('-')
   const m = parts[1]
   const d = parts[2]
   return `${Number(m)}/${Number(d)}`

@@ -670,30 +670,36 @@ function DailyTrend({ models, daily, granularity, t, colorForModel, panelRef }: 
   const maxTotal = Math.max(1, ...visible.map((d) => d.total))
   const ticks = niceTicks(maxTotal, 4)
   // What the X axis reads as depends on the WINDOW, not just the granularity:
-  // a multi-day hourly span (3天) is a DATE axis — one short date per day, at
-  // the day's first bucket, times would be noise across three day-clusters;
-  // a single-day hourly span (今日) is a CLOCK axis — the date is constant and
-  // would only repeat. Daily ranges stay date labels.
+  // a multi-day hourly span (3天) is a DATE axis — one short date per day,
+  // centred over that day's bar cluster, times would be noise across three
+  // day-clusters; a single-day hourly span (今日) is a CLOCK axis — the date is
+  // constant and would only repeat. Daily ranges stay date labels.
   const dayCount = new Set(visible.map((d) => d.day.slice(0, 10))).size
   const multiDayHourly = granularity === 'hour' && dayCount > 1
   const axisMode: 'day' | 'hour' = multiDayHourly ? 'day' : granularity
-  // Label buckets: day starts on multi-day hourly, every bucket otherwise.
-  const labelCandidates: number[] = []
+  // Label groups: on a multi-day hourly axis each DAY is one group whose label
+  // sits at the MIDDLE of that day's bars (centred on the day, not left-
+  // aligned to its first bar); otherwise every bucket is its own group and
+  // the label sits on its bar.
+  const labelGroups: Array<{ start: number; end: number }> = []
   for (let i = 0; i < n; i++) {
-    if (!multiDayHourly || i === 0 || visible[i].day.slice(0, 10) !== visible[i - 1].day.slice(0, 10)) labelCandidates.push(i)
+    const last = labelGroups[labelGroups.length - 1]
+    if (multiDayHourly && last && visible[last.end].day.slice(0, 10) === visible[i].day.slice(0, 10)) last.end = i
+    else labelGroups.push({ start: i, end: i })
   }
-  // Candidates are then thinned by POSITION, walking from the right edge: the
-  // rightmost candidate always keeps its label, an earlier one is kept only
-  // when it clears the previously kept label by the label width. (A fixed
-  // "every Nth" count plus a forced last label drew two labels on top of
-  // each other — the "18:00/23:00" overlap.) Both label shapes are ~30px.
+  // Groups are then thinned by POSITION, walking from the right edge: the
+  // rightmost group always keeps its label, an earlier one is kept only when
+  // it clears the previously kept label by the label width. (A fixed "every
+  // Nth" count plus a forced last label drew two labels on top of each other
+  // — the "18:00/23:00" overlap.) Both label shapes are ~30px.
   const labelMinGap = 42
-  const labeledIdx = new Set<number>()
+  const labeledGroups = new Set<number>()
   let lastLabelX = Number.POSITIVE_INFINITY
-  for (let k = labelCandidates.length - 1; k >= 0; k--) {
-    const x = padL + barHalf + labelCandidates[k] * step
+  for (let k = labelGroups.length - 1; k >= 0; k--) {
+    const g = labelGroups[k]!
+    const x = padL + barHalf + ((g.start + g.end) / 2) * step
     if (lastLabelX - x >= labelMinGap) {
-      labeledIdx.add(labelCandidates[k])
+      labeledGroups.add(k)
       lastLabelX = x
     }
   }
@@ -776,12 +782,18 @@ function DailyTrend({ models, daily, granularity, t, colorForModel, panelRef }: 
                   }}
                   onMouseLeave={() => setTip(null)}
                 />
-                {labeledIdx.has(i) && (
-                  <text className={css.axis} x={padL + barHalf + i * step} y={H - 8} textAnchor="middle">{bucketAxisLabel(d.day, axisMode)}</text>
-                )}
               </g>
             )
           })}
+          {labelGroups.map((g, k) => labeledGroups.has(k) && (
+            <text
+              key={`axis-${k}`}
+              className={css.axis}
+              x={padL + barHalf + ((g.start + g.end) / 2) * step}
+              y={H - 8}
+              textAnchor="middle"
+            >{bucketAxisLabel(visible[g.start].day, axisMode)}</text>
+          ))}
           <path className={css.trend} d={trendPath} fill="none" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
           {trendTipPt && (
             <circle className={css.trendDot} cx={trendTipPt.x} cy={trendTipPt.y} r={4} />
