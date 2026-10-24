@@ -5,6 +5,7 @@ import { billedTotal, cacheHitPercentOf } from './session-usage-core.ts'
 import { formatCompact, formatTokens, normalizeModelName } from './format.ts'
 import { SESSION_USAGE_NS, type SessionUsageKey } from './session-usage-locales.ts'
 import { useSessionDetail } from './use-session-detail.ts'
+import { ModelLogo } from './ModelLogo.tsx'
 import css from './SessionUsageView.module.css'
 
 type T = (key: SessionUsageKey) => string
@@ -19,7 +20,6 @@ const tokShort = (n: number): string => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : 
 const pctInt = (rate: number | null): string => rate === null ? '—' : `${Math.round(rate)}%`
 const speed = (n: number | null): string => n !== null && Number.isFinite(n) ? `${Math.round(n)} tok/s` : '—'
 const clock = (ms: number): string => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-const whale = 'M8 39.5C13.5 27.6 26.8 19.4 42.5 19.1c-1.6 2.4-2.3 5-2 7.9-5.6-1.7-11.7-.4-16.2 3.4 4.7 1.1 8.4 4.3 10.2 8.7 1.3-.4 2.7-1 4-1.9.4 2.1-.2 4.3-1.6 5.9-7.7.6-15.5-1.6-20.7-6.6-.7 1.9-.9 3.9-.6 5.9-3.1-1.2-5.6-3-7.6-2.9z'
 const modelShort = (ref: string): string => ref.includes('/') ? ref.slice(ref.indexOf('/') + 1) : ref
 const zero = (): SessionUsageTotals => ({ uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
 const sum = (rows: Row[]): SessionUsageTotals => rows.reduce((acc, r) => ({
@@ -108,7 +108,7 @@ function Tables({ detail, t }: { detail: SessionUsageDetail; t: T }): JSX.Elemen
           const providers = row.providers ?? []
           const shared = (nameCounts.get(normalizeModelName(name)) ?? 0) > 1
           return <tr key={row.model}>
-            <td><span className={css.ellipsis} title={row.model}>{name}</span>
+            <td><span className={css.modelNameCell}><ModelLogo model={row.model} name={row.name} providers={row.providers} className={css.modelLogo} /><span className={css.ellipsis} title={row.model}>{name}</span></span>
               {shared && providers.length > 0 ? <small className={css.modelProvider} title={providers.join(' / ')}>{providers.join(' / ')}</small> : null}
             </td>
             <td>{formatTokens(row.requests)}</td><td><Token n={row.totals.uncachedInputTokens} /></td><td><Token n={row.totals.outputTokens} /></td><td><Token n={row.totals.cacheReadTokens} /></td><td><Token n={row.totals.cacheWriteTokens} /></td><td><Hit totals={row.totals} /></td>
@@ -187,8 +187,7 @@ function Records({ detail, t }: { detail: SessionUsageDetail; t: T }): JSX.Eleme
               <span className={css.requestTime}>{clock(record.startedAt)}</span>
               <div className={css.turnRequestHead}>
                 <span className={`${css.statusDot} ${record.status === 'running' ? css.live : record.status === 'failed' ? css.bad : record.status === 'interrupted' ? css.muted : css.good}`} />
-                <span className={css.recordModel} title={`${record.provider} / ${record.model}`}><svg className={css.whale} width="13" height="13" viewBox="0 0 64 64" aria-hidden="true"><path d={whale} fill="currentColor" /></svg>{record.model || '—'}</span>
-                <span className={css.routeDot} />
+                <span className={css.recordModel} title={`${record.provider} / ${record.model}`}><ModelLogo provider={record.provider} model={record.model} className={css.modelLogo} />{record.model || '—'}</span>
                 <span className={css.routeText} title={record.provider}>{providerNames.get(record.provider) || record.provider || '—'} · {modelShort(record.model) || '—'}</span>
                 {statusText !== '' && <span className={record.status === 'running' ? css.live : record.status === 'failed' ? css.bad : css.muted}>{statusText}</span>}
                 {record.effort ? <span className={css.effort}>· {record.effort}</span> : null}

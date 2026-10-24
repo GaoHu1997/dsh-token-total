@@ -851,6 +851,13 @@ export class UsageCollector {
       if (failuresPassCompleted && clean) {
         await this.store.markFailuresReady()
       }
+    } catch (err) {
+      // The orchestration around the per-session loop (the persistence
+      // listing, cursor reads/writes, completion marks) fails on its own when
+      // the store is degraded or the listing is corrupt; that must land in
+      // status like a failed session, never escape the fire-and-forget boot
+      // chain as an unhandled rejection.
+      this.status.error = err instanceof Error ? err.message : String(err)
     } finally {
       this.status.running = false
     }

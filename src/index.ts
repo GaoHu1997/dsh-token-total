@@ -255,7 +255,14 @@ export function apply(ctx: Context, config: TokenTotalConfig = {}): void {
       await rescan()
       await ensureHourHistory()
       await ensureFailureHistory()
-    })()
+    })().catch((err) => {
+      // The boot chain runs fire-and-forget behind the host: a degraded store
+      // or a failed persistence listing must surface as a logged boot failure
+      // (the scan's own error already rides collector.status), never as an
+      // unhandled rejection that can take the process down.
+      const logger = (ctx as unknown as { logger?: { warn(message: unknown): void } }).logger
+      logger?.warn(`[dsh-token-total] boot scan failed: ${err instanceof Error ? err.message : String(err)}`)
+    })
     return () => {
       scanController?.abort()
     }

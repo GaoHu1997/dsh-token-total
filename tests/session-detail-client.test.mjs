@@ -125,6 +125,7 @@ function viewHarness() {
     if (name === './SessionUsageView.module.css') return { __esModule: true, default: css }
     if (name === './session-usage-locales.ts') return { SESSION_USAGE_NS: 'sessionUsage' }
     if (name === './use-session-detail.ts') return { useSessionDetail: () => ({ detail: fixture, loading: false, error: false, retry() {} }) }
+    if (name === './ModelLogo.tsx') return { ModelLogo: props => ({ type: 'svg', props: { className: props.className, 'data-model': props.model, 'data-name': props.name } }) }
     assert.fail(name)
   }
   runInContext(viewCode, sandbox)
@@ -168,6 +169,7 @@ test('Usage request log folds by turn: groups start collapsed, toggle, and expan
   assert.ok(!all.some(n => n.props?.className === 'requestBody'), 'metrics no longer sit on a second line under the head')
   const requestRows = all.filter(n => n.props?.className === 'turnRequest')
   assert.ok(requestRows.length > 0, 'request rows render')
+  assert.ok(all.some(n => n.type === 'svg' && n.props['data-model'] === 'm'), 'each request row leads with its model logo')
   for (const row of requestRows) {
     const cells = [row.props.children].flat(Infinity).filter(Boolean)
     assert.equal(cells.at(-1).props?.className, 'recordMeta', 'metrics are the row end cell')
@@ -192,4 +194,15 @@ test('By-model card labels rows with model display names and gray providers on n
   const gray = all.filter(n => n.type === 'small' && n.props?.className === 'modelProvider')
   assert.deepEqual(gray.map(n => n.props.children), ['GitHub Models / Azure', 'LinuxDO'], 'only colliding names get a provider label')
   assert.deepEqual(gray.map(n => n.props.title), ['GitHub Models / Azure', 'LinuxDO'], 'tooltip lists every provider that served the model')
+  // Every model row leads with its brand logo (the stub tags it data-model);
+  // record rows also render logos, so scope this to the by-model name cells.
+  // The matcher receives the row's display name too, so an opaque route id
+  // beside a brandful label still shows that brand's mark.
+  for (const { model, name } of fixture.models) {
+    const cell = all.find(n => n.props?.className === 'modelNameCell' && nodes(n).some(c => c.type === 'svg' && c.props['data-model'] === model))
+    assert.ok(cell, `model row for ${model} leads with its brand logo`)
+    assert.ok(nodes(cell).some(c => c.props?.className === 'ellipsis' && c.props?.title === model))
+    const logo = nodes(cell).find(c => c.type === 'svg')
+    assert.equal(logo.props['data-name'], name, `logo matcher receives the display name for ${model}`)
+  }
 })

@@ -40,6 +40,10 @@
 .modelRequests { width:11%; }
 .modelHit { width:16%; }
 .ellipsis { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#394354; }
+/* By-model rows lead with the model's brand logo; the name keeps truncating
+ * inside the flexible remainder of the cell. */
+.modelNameCell { display:flex; align-items:center; gap:6px; min-width:0; }
+.modelNameCell .ellipsis { flex:1; min-width:0; }
 /* Gray provider label under a model name shown by several rows (同名模型). */
 .modelProvider { display:block; margin-top:2px; font-size:10px; color:#939aaa; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .number { font-variant-numeric:tabular-nums; }
@@ -77,9 +81,10 @@
 .turnRequest:first-child { border-top:0; }
 .turnRequestHead { display:flex; align-items:center; gap:8px; font-size:11px; color:#616c7f; min-width:0; }
 .requestTime { color:#9aa3b3; font-variant-numeric:tabular-nums; flex-shrink:0; }
-.statusDot { width:7px; height:7px; border-radius:50%; background:currentColor; flex-shrink:0; }
-.routeDot { width:6px; height:6px; border-radius:50%; background:#21a17b; flex-shrink:0; }
-.whale { color:#4d6bfe; flex-shrink:0; }
+.statusDot { width:5px; height:5px; border-radius:50%; background:currentColor; flex-shrink:0; }
+/* Per-model brand logo: colors are baked into each logo's markup, only the
+ * layout contract lives here. Unknown models get the neutral gray fallback. */
+.modelLogo { flex-shrink:0; }
 .recordModel { min-width:0; display:flex; align-items:center; gap:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#394354; font-weight:500; }
 .routeText { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#8b93a4; flex-shrink:1; }
 .effort { white-space:nowrap; color:#9aa3b3; background:#f1f3f7; border-radius:5px; padding:1px 6px; }
