@@ -45,19 +45,15 @@ const icons = {
   speed: 'M13 2 4 14h7l-1 8 9-12h-7l1-8Z',
   input: 'M12 3v12M7 10l5 5 5-5M4 21h16',
   output: 'M12 21V9M7 14l5-5 5 5M4 3h16',
-  read: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',
-  write: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5Z',
 }
 
 function Stat({ tone, name, label, value, sub, title }: { tone: string; name: keyof typeof icons; label: string; value: string | JSX.Element; sub?: string; title?: string }): JSX.Element {
   const icon = icons[name]
   return <article className={`${css.stat} ${tone}`}>
-    {/* Oversized gradient watermark filling the card's empty right side. */}
-    <svg className={css.statMark} viewBox="0 0 24 24" aria-hidden="true">
-      <defs><linearGradient id={`usage-mark-${name}`} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="currentColor" stopOpacity="0.3" /><stop offset="1" stopColor="currentColor" stopOpacity="0.03" /></linearGradient></defs>
-      <path d={icon} fill={`url(#usage-mark-${name})`} stroke={`url(#usage-mark-${name})`} strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-    <div className={css.statHead}><span className={css.statIcon}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={icon} /></svg></span><span className={css.statLabel}>{label}</span></div>
+    <div className={css.statHead}>
+      <span className={css.statIcon}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={icon} /></svg></span>
+      <span className={css.statLabel}>{label}</span>
+    </div>
     <strong className={css.statValue} title={title}>{value}</strong>
     {sub !== undefined && <span className={css.statSub}>{sub}</span>}
   </article>
@@ -68,18 +64,12 @@ function Metrics({ detail, t }: { detail: SessionUsageDetail; t: T }): JSX.Eleme
   const failed = detail.records.filter(row => row.status === 'failed').length
   const failRate = detail.requests > 0 ? (failed / detail.requests * 100).toFixed(1) : '0.0'
   return <div className={css.stats}>
-    <div className={css.statRow}>
-      <Stat tone={css.toneBlue} name="requests" label={t('requestsCount')} value={formatTokens(detail.requests)} sub={`${t('failed')} ${failed} · ${failRate}%`} />
-      <Stat tone={css.tonePurple} name="tokens" label={t('tokens')} value={formatCompact(billed)} title={formatTokens(billed)} sub={`${formatTokens(billed)} tokens`} />
-      <Stat tone={css.toneGreen} name="hit" label={t('hit')} value={<Hit totals={detail.totals} />} sub={`${formatCompact(detail.totals.cacheReadTokens)} ${t('cacheHit')}`} />
-      <Stat tone={css.toneOrange} name="speed" label={t('speed')} value={speed(detail.tokensPerSecond)} sub={`${t('first')} ${seconds(detail.averageFirstTokenMs)}`} />
-    </div>
-    <div className={css.statRow}>
-      <Stat tone={css.toneTeal} name="input" label={t('inputFull')} value={formatCompact(detail.totals.uncachedInputTokens)} title={formatTokens(detail.totals.uncachedInputTokens)} sub={formatTokens(detail.totals.uncachedInputTokens)} />
-      <Stat tone={css.toneOrange} name="output" label={t('outputFull')} value={formatCompact(detail.totals.outputTokens)} title={formatTokens(detail.totals.outputTokens)} sub={formatTokens(detail.totals.outputTokens)} />
-      <Stat tone={css.tonePurple} name="read" label={t('readFull')} value={formatCompact(detail.totals.cacheReadTokens)} title={formatTokens(detail.totals.cacheReadTokens)} sub={formatTokens(detail.totals.cacheReadTokens)} />
-      <Stat tone={css.tonePink} name="write" label={t('writeFull')} value={formatCompact(detail.totals.cacheWriteTokens)} title={formatTokens(detail.totals.cacheWriteTokens)} sub={formatTokens(detail.totals.cacheWriteTokens)} />
-    </div>
+    <Stat tone={css.toneBlue} name="requests" label={t('requestsCount')} value={formatTokens(detail.requests)} sub={`${t('failed')} ${failed} · ${failRate}%`} />
+    <Stat tone={css.tonePurple} name="tokens" label={t('tokens')} value={formatCompact(billed)} title={formatTokens(billed)} sub={`${formatTokens(billed)} tokens`} />
+    <Stat tone={css.toneTeal} name="input" label={t('inputFull')} value={formatCompact(detail.totals.uncachedInputTokens)} title={formatTokens(detail.totals.uncachedInputTokens)} sub={formatTokens(detail.totals.uncachedInputTokens)} />
+    <Stat tone={css.toneOrange} name="output" label={t('outputFull')} value={formatCompact(detail.totals.outputTokens)} title={formatTokens(detail.totals.outputTokens)} sub={formatTokens(detail.totals.outputTokens)} />
+    <Stat tone={css.toneGreen} name="hit" label={t('hit')} value={<Hit totals={detail.totals} />} sub={`${formatCompact(detail.totals.cacheReadTokens)} ${t('cacheHit')}`} />
+    <Stat tone={css.toneOrange} name="speed" label={t('speed')} value={speed(detail.tokensPerSecond)} sub={`${t('first')} ${seconds(detail.averageFirstTokenMs)}`} />
   </div>
 }
 
@@ -150,6 +140,11 @@ function Records({ detail, t }: { detail: SessionUsageDetail; t: T }): JSX.Eleme
     }
     group.rows.push(record)
   }
+  // Newest turn on top: groups order by the time of their most recent request,
+  // not by first appearance, so the live work leads and finished history trails
+  // (records arrive root-session first, subagents after, regardless of time).
+  const latest = (group: { rows: Row[] }): number => group.rows.reduce((max, row) => Math.max(max, row.startedAt), 0)
+  groups.sort((a, b) => latest(b) - latest(a))
   return <section className={css.card}><header className={css.cardHead}><h2>{t('records')} <span className={css.count}>{detail.records.length}</span></h2><button type="button" className={css.action} onClick={toggleAll}>{t(allOpen ? 'collapse' : 'expand')}</button></header>
     <div className={css.turnList}>{groups.map(group => {
       const open = allOpen !== opened.has(group.key)
@@ -175,8 +170,8 @@ function Records({ detail, t }: { detail: SessionUsageDetail; t: T }): JSX.Eleme
           </span>
         </button>
         <div id={`usage-turn-${encodeURIComponent(group.key)}`} className={css.turnBody} hidden={!open}>
-          {/* Requests arrive in event order, so every turn lists its newest
-              request first; turn groups themselves keep chronological order. */}
+          {/* Newest first inside and out: every turn lists its newest request
+              first, and turn groups themselves lead with the latest turn. */}
           {group.rows.slice().reverse().map(record => {
             const duration = record.finishedAt !== null ? record.finishedAt - record.startedAt : null
             const billed = billedTotal(record.totals)

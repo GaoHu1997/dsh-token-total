@@ -165,7 +165,7 @@ test('Usage request log folds by turn: groups start collapsed, toggle, and expan
   assert.equal(groupButtons().length, 3)
   assert.ok(groupButtons().every(n => n.props['aria-expanded'] === false), 'turn groups start collapsed')
   assert.ok(all.some(n => n.props?.hidden === true))
-  // each turn group holds its own requests (root turn 1 = 2)
+  // each turn group holds its own requests (first group = root turn 2, 1 request)
   all = nodes(render())
   const group0 = () => groupButtons()[0]
   group0().props.onClick()
@@ -190,9 +190,10 @@ test('Usage request log folds by turn: groups start collapsed, toggle, and expan
   assert.ok(!all.some(n => n.props?.className === 'requestBody'), 'metrics no longer sit on a second line under the head')
   const requestRows = all.filter(n => n.props?.className === 'turnRequest')
   assert.ok(requestRows.length > 0, 'request rows render')
-  // Inside a turn the newest request comes first; turn groups stay in
-  // chronological order (root turn 1 reverses its two steps, then 2, then child).
-  assert.deepEqual(requestRows.map(row => row.key), ['root:1:2', 'root:1:1', 'root:2:1', 'child:1:1'])
+  // Newest first everywhere: turn groups order by their most recent request
+  // (turn 2 at 50, turn 1 at 30, child at 15) and, inside a turn, the newest
+  // request comes first (root turn 1 reverses its two steps).
+  assert.deepEqual(requestRows.map(row => row.key), ['root:2:1', 'root:1:2', 'root:1:1', 'child:1:1'])
   // The status label trails the thinking-level badge: the row reads
   // route → effort → status ("· high 失败"), never status before effort.
   // Spread first: nodes() may return a vm-realm array whose prototype
@@ -208,9 +209,12 @@ test('Usage request log folds by turn: groups start collapsed, toggle, and expan
   assert.ok(all.some(n => String(n.props?.children ?? '').includes('首字耗时 3 秒')), 'meta line keeps first-token timing')
   assert.ok(all.some(n => String(n.props?.children ?? '').includes('42 token/秒')), 'meta line keeps throughput')
   // The turn summary and the card fold decode windows instead of averaging the
-  // per-request rates (the failed row has no window: 200 tokens / 1.0 s).
-  const turnRate = all.find(n => Array.isArray(n.props?.children) && n.props.children[0] === '平均速率')
-  assert.deepEqual([...turnRate.props.children], ['平均速率', ' ', 200, ' ', 'token/秒'], 'turn rate divides by decode windows')
+  // per-request rates (the failed row has no window: 200 tokens / 1.0 s). The
+  // newest-first turn order puts the window-less turn 2 on top, so match the
+  // folding group's summary instead of the first one.
+  const turnRates = all.filter(n => Array.isArray(n.props?.children) && n.props.children[0] === '平均速率')
+  const folded = turnRates.find(n => n.props.children[2] === 200)
+  assert.deepEqual([...folded.props.children], ['平均速率', ' ', 200, ' ', 'token/秒'], 'turn rate divides by decode windows')
   assert.ok(all.some(n => n.props?.className === 'statValue' && n.props.children === '96 tok/s'), 'the card speed is the same decode rate')
   assert.ok(!all.some(n => String(n.props?.children ?? '').includes('42 token/秒') && String(n.props?.className ?? '') === 'statValue'), 'the card never shows a per-request rate')
   assert.ok(!all.some(n => n.props?.className === 'recordFacts'), 'old fact grid is replaced by the row-end metrics')
