@@ -7,6 +7,10 @@ import { modelNameOf, providerOf } from './shared.ts'
 const LOOKUP_CONCURRENCY = 4
 const LOOKUP_TIMEOUT_MS = 2000
 
+/** Raised when a lookup's own timer fires — i.e. the shared phase budget is
+ *  spent. Workers stop on this instead of trusting the wall clock again. */
+class LookupTimeoutError extends Error {}
+
 /** Bound metadata queries even if an adapter fails to honor cancellation. */
 async function lookup<T>(read: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
   const controller = new AbortController()
@@ -17,7 +21,7 @@ async function lookup<T>(read: (signal: AbortSignal) => Promise<T>, timeoutMs: n
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
           controller.abort()
-          reject(new Error('model display-name lookup timed out'))
+          reject(new LookupTimeoutError('model display-name lookup timed out'))
         }, timeoutMs)
       }),
     ])
@@ -81,8 +85,12 @@ export async function resolveModelNames(
         try {
           const info = await lookup((signal) => llm.resolveModelInfo!(providerOf(ref), modelNameOf(ref), signal), remaining)
           if (info.name?.trim()) names.set(ref, info.name)
-        } catch {
+        } catch (error) {
           // Metadata is auxiliary: never lose usage because a route is gone.
+          // The shared budget is spent once our own timer fires; stop instead
+          // of trusting the clock again (setTimeout vs Date.now can disagree
+          // by ~1ms and would otherwise queue extra lookups past the deadline).
+          if (error instanceof LookupTimeoutError) break
         }
       }
     }))
@@ -105,8 +113,10 @@ export async function resolveModelNames(
             const name = byId.get(modelNameOf(ref))
             if (name?.trim()) names.set(ref, name)
           }
-        } catch {
-          // A dormant provider must not prevent historical totals from loading.
+        } catch (error) {
+          // A dormant provider must not prevent historical totals from loading;
+          // a fired timer still ends the whole catalog phase (see above).
+          if (error instanceof LookupTimeoutError) break
         }
       }
     }))
