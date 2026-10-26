@@ -42,20 +42,41 @@ test('Usage detail starts immediately, serializes retries, preserves good data o
   const h = hookHarness()
   assert.equal(h.render().loading, true)
   assert.equal(h.requests.length, 1)
-  h.render().retry()
-  assert.equal(h.requests.length, 1)
+  h.render().refresh()
+  assert.equal(h.requests.length, 1, 'a refresh click during an in-flight read is absorbed')
   h.requests[0].resolve(detail); await flush()
   assert.equal(h.render().detail, detail)
   h.tick()
   h.requests[1].reject(new Error('network')); await flush()
   assert.equal(h.render().error, true)
   assert.equal(h.render().detail, detail)
-  h.render().retry()
+  h.render().refresh()
   assert.equal(h.requests.length, 3)
   h.unmount()
   assert.equal(h.requests[2].signal.aborted, true)
   assert.equal(h.timers.size, 0)
   assert.equal(h.listeners.size, 0)
+})
+
+test('Usage detail manual refresh refetches now when idle, right after the in-flight poll when busy', async () => {
+  const h = hookHarness()
+  h.render(); h.requests[0].resolve(detail); await flush()
+  assert.ok(h.render().updatedAt !== null, 'updatedAt stamps the last successful read')
+  // idle: a refresh click fires a request immediately
+  h.render().refresh()
+  assert.equal(h.requests.length, 2)
+  // mid-poll: the click is remembered and refetches right after the answer lands
+  h.render().refresh()
+  assert.equal(h.requests.length, 2)
+  h.requests[1].resolve(detail); await flush()
+  h.tick()
+  assert.equal(h.requests.length, 3)
+  const stamp = h.render().updatedAt
+  // a failed refresh keeps the previous data and its stamp
+  h.requests[2].reject(new Error('network')); await flush()
+  assert.equal(h.render().detail, detail)
+  assert.equal(h.render().updatedAt, stamp)
+  h.unmount()
 })
 
 test('Usage detail switching hides old result immediately and aborts the old request', async () => {
@@ -124,7 +145,7 @@ function viewHarness() {
     if (name === './format.ts') return { formatCompact, formatTokens, normalizeModelName, decodeRateOf }
     if (name === './SessionUsageView.module.css') return { __esModule: true, default: css }
     if (name === './session-usage-locales.ts') return { SESSION_USAGE_NS: 'sessionUsage' }
-    if (name === './use-session-detail.ts') return { useSessionDetail: () => ({ detail: fixture, loading: false, error: false, retry() {} }) }
+    if (name === './use-session-detail.ts') return { useSessionDetail: () => ({ detail: fixture, loading: false, error: false, refresh() {}, updatedAt: 1 }) }
     if (name === './ModelLogo.tsx') return { ModelLogo: props => ({ type: 'svg', props: { className: props.className, 'data-model': props.model, 'data-name': props.name } }) }
     assert.fail(name)
   }

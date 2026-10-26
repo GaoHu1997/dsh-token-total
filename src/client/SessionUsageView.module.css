@@ -5,6 +5,15 @@
 .scroll { height:100%; min-height:0; overflow-y:auto; background:#ffffff; color:#252936; color-scheme:light; container-type:inline-size; }
 .page { box-sizing:border-box; width:100%; max-width:1160px; margin:0 auto; padding:24px 26px 32px; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; font-size:13px; }
 .page * { box-sizing:border-box; }
+/* Freshness header: live badge + last-read stamp on the left, manual refresh
+ * pinned to the right edge. */
+.head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 12px; }
+.headStatus { display:flex; align-items:center; gap:7px; min-width:0; font-size:11px; color:#8790a3; }
+.liveDot { width:6px; height:6px; border-radius:50%; background:#18a97b; box-shadow:0 0 0 3px #e5f6f0; flex-shrink:0; }
+.asOf { color:#9aa3b3; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.refresh { display:inline-flex; align-items:center; gap:5px; flex:none; color:#6f7a8d; background:#fff; border:1px solid #e4e7ee; border-radius:8px; padding:5px 11px; font:inherit; font-size:11px; cursor:pointer; }
+.refresh:hover { color:#279cb6; border-color:#cbd3e0; }
+.refresh:disabled { opacity:.55; cursor:default; }
 .scope { color:#8790a3; font-size:11px; margin:0 0 14px; }
 .stats { display:grid; gap:12px; margin-bottom:18px; }
 .statRow { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
@@ -57,7 +66,7 @@
 .empty { margin:0; padding:28px 18px; color:#9aa2b1; font-size:12px; text-align:center; }
 .action { color:#818b9e; background:none; border:0; padding:3px 0; font:inherit; font-size:11px; cursor:pointer; }
 .action:hover { color:#279cb6; }
-.action:focus-visible,.turnHead:focus-visible { outline:2px solid #2ab1c6; outline-offset:-2px; }
+.action:focus-visible,.turnHead:focus-visible,.refresh:focus-visible { outline:2px solid #2ab1c6; outline-offset:-2px; }
 .turnList { padding:0 14px 14px; }
 .turn { margin-top:10px; border:1px solid #e7eaf0; border-radius:9px; background:#fff; overflow:hidden; }
 .turnHead { display:grid; grid-template-columns:12px minmax(0,1fr) auto; align-items:center; gap:12px; padding:13px 14px; width:100%; text-align:left; background:#f8f9fc; border:0; cursor:pointer; color:#616c7f; font:inherit; font-size:11px; }

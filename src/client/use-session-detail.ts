@@ -10,13 +10,17 @@ export function useSessionDetail(sessionId: string): {
   detail: SessionUsageDetail | null
   loading: boolean
   error: boolean
-  retry: () => void
+  /** Manual refresh: runs now when idle, or right after an in-flight poll lands. */
+  refresh: () => void
+  /** Wall-clock time of the last successful read, for the "as of" stamp. */
+  updatedAt: number | null
 } {
-  const [reading, setReading] = useState<{ sessionId: string; detail: SessionUsageDetail | null; error: boolean } | null>(null)
+  const [reading, setReading] = useState<{ sessionId: string; detail: SessionUsageDetail | null; error: boolean; updatedAt: number | null } | null>(null)
   const refresh = useRef<(() => void) | null>(null)
   useEffect(() => {
     let active = true
     let pending = false
+    let wantedNow = false
     let timer: ReturnType<typeof setTimeout> | undefined
     let controller: AbortController | undefined
     const request = (): void => {
@@ -25,16 +29,21 @@ export function useSessionDetail(sessionId: string): {
       pending = true
       controller = new AbortController()
       void fetchSessionDetail(sessionId, controller.signal).then(detail => {
-        if (active) setReading({ sessionId, detail, error: false })
+        if (active) setReading({ sessionId, detail, error: false, updatedAt: Date.now() })
       }).catch(() => {
-        if (active) setReading(previous => ({ sessionId, detail: previous?.sessionId === sessionId ? previous.detail : null, error: true }))
+        if (active) setReading(previous => ({ sessionId, detail: previous?.sessionId === sessionId ? previous.detail : null, error: true, updatedAt: previous?.sessionId === sessionId ? previous.updatedAt : null }))
       }).finally(() => {
         pending = false
-        if (active) timer = setTimeout(request, DETAIL_POLL_MS)
+        // A refresh pressed mid-poll skips the regular interval and refetches
+        // as soon as the in-flight answer lands, so the click never stalls.
+        if (active) timer = setTimeout(request, wantedNow ? 0 : DETAIL_POLL_MS)
+        wantedNow = false
       })
     }
     const wake = (): void => { if (document.visibilityState === 'visible') request() }
-    refresh.current = request
+    // Manual refresh: fire immediately when idle; when a poll is already in
+    // flight, mark it and refetch right after it settles.
+    refresh.current = () => { if (pending) wantedNow = true; else request() }
     document.addEventListener('visibilitychange', wake)
     request()
     return () => {
@@ -46,5 +55,5 @@ export function useSessionDetail(sessionId: string): {
     }
   }, [sessionId])
   const current = reading?.sessionId === sessionId ? reading : null
-  return { detail: current?.detail ?? null, loading: current === null, error: current?.error ?? false, retry: () => refresh.current?.() }
+  return { detail: current?.detail ?? null, loading: current === null, error: current?.error ?? false, refresh: () => refresh.current?.(), updatedAt: current?.updatedAt ?? null }
 }

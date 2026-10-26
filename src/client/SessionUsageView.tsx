@@ -212,10 +212,24 @@ export function SessionUsageContent({ detail, t }: { detail: SessionUsageDetail;
 }
 
 export function SessionUsageView({ sessionId, t }: SessionUsageViewProps): JSX.Element {
-  const { detail, loading, error, retry } = useSessionDetail(sessionId)
+  const { detail, loading, error, refresh, updatedAt } = useSessionDetail(sessionId)
   return <div className={css.scroll} data-dsh-session-usage><div className={css.page}>
+    {/* Freshness header: the view polls continuously, so it always shows a live
+        badge with the time of the last successful read, plus a manual refresh
+        that refetches immediately. */}
+    <header className={css.head}>
+      <span className={css.headStatus}>
+        <span className={css.liveDot} aria-hidden="true" />
+        <span>{t('live')}</span>
+        {updatedAt !== null && <span className={css.asOf}>{t('asOf')} {clock(updatedAt)}</span>}
+      </span>
+      <button type="button" className={css.refresh} onClick={refresh} disabled={loading}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
+        {t('refresh')}
+      </button>
+    </header>
     {loading && <p className={css.empty} role="status">{t('loading')}</p>}
-    {error && <div className={css.error} role="status">{t('failedLoad')}<button type="button" className={css.action} onClick={retry}>{t('retry')}</button></div>}
+    {error && <div className={css.error} role="status">{t('failedLoad')}<button type="button" className={css.action} onClick={refresh}>{t('retry')}</button></div>}
     {detail && <SessionUsageContent detail={detail} t={t} />}
   </div></div>
 }

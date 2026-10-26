@@ -15,6 +15,7 @@ export const usageZh = {
   provider: '供应商', status: '状态', exact: '完整 token 数',
   answering: '正在回答...', firstWait: '首字耗时', sec: '秒', tokenWord: 'token', perSec: 'token/秒',
   cacheShort: '缓存', avgCache: '平均缓存', avgRate: '平均速率', inProgress: '个进行中',
+  live: '实时更新', asOf: '统计截至', refresh: '刷新',
 }
 export type SessionUsageKey = keyof typeof usageZh
 export const usageEn: Record<SessionUsageKey, string> = {
@@ -32,6 +33,7 @@ export const usageEn: Record<SessionUsageKey, string> = {
   provider: 'Provider', status: 'Status', exact: 'Exact token count',
   answering: 'answering...', firstWait: 'first token', sec: 's', tokenWord: 'token', perSec: 'token/s',
   cacheShort: 'cache', avgCache: 'avg cache', avgRate: 'avg rate', inProgress: 'in progress',
+  live: 'Live', asOf: 'as of', refresh: 'Refresh',
 }
 export const usageZhTW: Record<SessionUsageKey, string> = {
   ...usageZh,
@@ -47,4 +49,5 @@ export const usageZhTW: Record<SessionUsageKey, string> = {
   main: '主會話', turn: '輪', step: '步', started: '開始', duration: '耗時', firstDetail: '首 token', provider: '供應商', status: '狀態', exact: '完整 token 數',
   answering: '正在回答...', firstWait: '首字耗時', sec: '秒', tokenWord: 'token', perSec: 'token/秒',
   cacheShort: '快取', avgCache: '平均快取', avgRate: '平均速率', inProgress: '個進行中',
+  live: '即時更新', asOf: '統計截至', refresh: '重新整理',
 }
