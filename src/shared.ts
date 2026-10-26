@@ -53,6 +53,29 @@ export function modelNameOf(modelRef: string): string {
   return modelRef
 }
 
+/** The decode accounting one request row must expose: the wall window from the
+ *  step's first token to its assembled assistant message, plus the output tokens
+ *  that window produced. */
+export interface DecodeRowLike {
+  decodeMs: number | null
+  totals: { outputTokens: number }
+}
+
+/** Decode throughput across rows: Σ(output tokens) / Σ(decode window), matching
+ *  the `sessionStats` projection's decodeTokens/decodeMs rate that the composer
+ *  bottom bar shows. Rows without a decode window (failed attempts, cancelled
+ *  steps, running requests) are excluded, so the card, the turn summaries and
+ *  the bottom bar all report one speed. */
+export function decodeRateOf(rows: readonly DecodeRowLike[]): number | null {
+  let ms = 0
+  let tokens = 0
+  // typeof, not `!== null`: a bundle newer than the payload it is handed (a
+  // cached detail, an older server) leaves `decodeMs` absent, and one absent
+  // field must not turn the whole sum into NaN.
+  for (const row of rows) if (typeof row.decodeMs === 'number' && Number.isFinite(row.decodeMs)) { ms += row.decodeMs; tokens += row.totals.outputTokens }
+  return ms > 0 ? tokens / (ms / 1000) : null
+}
+
 /** Canonicalize a DISPLAY NAME, never a route id. Case and word separators
  *  do not distinguish models, but versions, punctuation and suffixes do:
  *  gpt-6.1-sol / GPT 6.1 sol -> gpt-6.1-sol, not gpt-6.1 or gpt-61-sol.

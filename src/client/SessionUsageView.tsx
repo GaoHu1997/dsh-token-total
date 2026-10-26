@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionUsageDetail, SessionUsageTotals } from '../wire.ts'
 import { billedTotal, cacheHitPercentOf } from './session-usage-core.ts'
-import { formatCompact, formatTokens, normalizeModelName } from './format.ts'
+import { formatCompact, formatTokens, normalizeModelName, decodeRateOf } from './format.ts'
 import { SESSION_USAGE_NS, type SessionUsageKey } from './session-usage-locales.ts'
 import { useSessionDetail } from './use-session-detail.ts'
 import { ModelLogo } from './ModelLogo.tsx'
@@ -156,8 +156,11 @@ function Records({ detail, t }: { detail: SessionUsageDetail; t: T }): JSX.Eleme
       const totals = sum(group.rows)
       const billed = billedTotal(totals)
       const running = group.rows.filter(row => row.status === 'running').length
-      const rates = group.rows.map(row => row.tokensPerSecond).filter((n): n is number => n !== null)
-      const avgRate = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : null
+      // Same decode based rate as the card and the composer bottom bar: the
+      // turn's output tokens over its summed decode windows, never the mean of
+      // independently rounded per-request rates.
+      const rate = decodeRateOf(group.rows)
+      const avgRate = rate === null ? null : Math.round(rate)
       return <article key={group.key} className={css.turn}>
         <button type="button" className={css.turnHead} onClick={() => toggle(group.key)} aria-expanded={open} aria-controls={`usage-turn-${encodeURIComponent(group.key)}`}>
           <svg className={`${css.chevron} ${open ? css.rotated : ''}`} width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="m4 2 4 4-4 4" stroke="currentColor" strokeWidth="1.5" fill="none" /></svg>
@@ -172,7 +175,9 @@ function Records({ detail, t }: { detail: SessionUsageDetail; t: T }): JSX.Eleme
           </span>
         </button>
         <div id={`usage-turn-${encodeURIComponent(group.key)}`} className={css.turnBody} hidden={!open}>
-          {group.rows.map(record => {
+          {/* Requests arrive in event order, so every turn lists its newest
+              request first; turn groups themselves keep chronological order. */}
+          {group.rows.slice().reverse().map(record => {
             const duration = record.finishedAt !== null ? record.finishedAt - record.startedAt : null
             const billed = billedTotal(record.totals)
             const hit = cacheHitPercentOf(record.totals)
@@ -189,8 +194,8 @@ function Records({ detail, t }: { detail: SessionUsageDetail; t: T }): JSX.Eleme
                 <span className={`${css.statusDot} ${record.status === 'running' ? css.live : record.status === 'failed' ? css.bad : record.status === 'interrupted' ? css.muted : css.good}`} />
                 <span className={css.recordModel} title={`${record.provider} / ${record.model}`}><ModelLogo provider={record.provider} model={record.model} className={css.modelLogo} />{record.model || '—'}</span>
                 <span className={css.routeText} title={record.provider}>{providerNames.get(record.provider) || record.provider || '—'} · {modelShort(record.model) || '—'}</span>
-                {statusText !== '' && <span className={record.status === 'running' ? css.live : record.status === 'failed' ? css.bad : css.muted}>{statusText}</span>}
                 {record.effort ? <span className={css.effort}>· {record.effort}</span> : null}
+                {statusText !== '' && <span className={record.status === 'running' ? css.live : record.status === 'failed' ? css.bad : css.muted}>{statusText}</span>}
               </div>
               {record.finishedAt !== null && <div className={css.recordMeta}>{meta.map((item, i) => <span key={i} title={item.title}>{i > 0 ? ' · ' : ''}{item.text}</span>)}</div>}
             </div>

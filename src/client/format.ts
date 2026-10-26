@@ -10,7 +10,7 @@
 
 // Shared with the host half (src/shared.ts has no Node/DOM types, so the
 // client bundle may import it at runtime).
-export { providerOf, modelNameOf, normalizeModelName, daysInRange as daysBetween } from '../shared.ts'
+export { providerOf, modelNameOf, normalizeModelName, daysInRange as daysBetween, decodeRateOf } from '../shared.ts'
 
 /** Exact token counts with thousands separators — no 万/亿/k/M units, the
  *  user reads the precise number (long values shrink to fit via FitText).

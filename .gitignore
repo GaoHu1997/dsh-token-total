@@ -7,3 +7,7 @@ artifacts/
 package-lock.json
 .dsh-inspect/
 .tmp/
+*.tsbuildinfo
+Thumbs.db
+# one-off check against a local real session log — run manually, never publish
+tests/_verify-real.mjs

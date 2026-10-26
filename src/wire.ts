@@ -179,6 +179,11 @@ export interface SessionUsageDetail {
     status: 'running' | 'completed' | 'failed' | 'interrupted'
     totals: SessionUsageTotals
     firstTokenMs: number | null
+    /** Wall window from this step's first token to the assembled assistant
+     *  message — the same decode window the `sessionStats` projection counts
+     *  (decodeMs). Null when the request never assembled a message or reported
+     *  no usage, so it stays out of every throughput quotient. */
+    decodeMs: number | null
     tokensPerSecond: number | null
     turnName: string
     effort: string

@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { createContext, runInContext } from 'node:vm'
 import { usageEn, usageZh, usageZhTW } from '../src/client/session-usage-locales.ts'
 import { billedTotal, cacheHitPercentOf } from '../src/client/session-usage-core.ts'
-import { formatCompact, formatTokens } from '../src/client/format.ts'
+import { decodeRateOf, formatCompact, formatTokens } from '../src/client/format.ts'
 import { normalizeModelName } from '../src/shared.ts'
 
 const require = createRequire(import.meta.url)
@@ -93,7 +93,7 @@ test('Usage dictionaries have matching keys and cache writes are in the denomina
 const fixture = {
   sessionId: 'root', requests: 2,
   totals: { uncachedInputTokens: 1000, outputTokens: 200, cacheReadTokens: 3000, cacheWriteTokens: 400 },
-  averageFirstTokenMs: null, tokensPerSecond: null,
+  averageFirstTokenMs: null, tokensPerSecond: 95.98,
   subagents: [{ sessionId: 'child', name: 'A very long full subagent session name that must have a tooltip', requests: 1, totals: { uncachedInputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 }, averageFirstTokenMs: null, tokensPerSecond: null }],
   models: [
     { model: 'model-with-a-long-name', name: 'GPT 6.1 sol', providers: ['GitHub Models', 'Azure'], requests: 2, totals: { uncachedInputTokens: 1000, outputTokens: 200, cacheReadTokens: 3000, cacheWriteTokens: 400 } },
@@ -105,8 +105,8 @@ const fixture = {
   ],
   routes: [{ id: 'p/m', provider: 'p', name: 'Provider', model: 'm', status: 'idle' }],
   records: [
-    { id: 'root:1:1', sessionId: 'root', sessionName: 'Root', turn: 1, step: 1, startedAt: 10, finishedAt: 20, provider: 'p', model: 'm', status: 'completed', totals: { uncachedInputTokens: 1000, outputTokens: 200, cacheReadTokens: 3000, cacheWriteTokens: 400 }, firstTokenMs: 3000, tokensPerSecond: 42, turnName: 'Fix the login bug', effort: 'high' },
-    { id: 'root:1:2', sessionId: 'root', sessionName: 'Root', turn: 1, step: 2, startedAt: 30, finishedAt: 40, provider: 'p', model: 'm', status: 'failed', totals: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, firstTokenMs: null, tokensPerSecond: null, turnName: 'Fix the login bug', effort: '' },
+    { id: 'root:1:1', sessionId: 'root', sessionName: 'Root', turn: 1, step: 1, startedAt: 10, finishedAt: 20, provider: 'p', model: 'm', status: 'completed', totals: { uncachedInputTokens: 1000, outputTokens: 200, cacheReadTokens: 3000, cacheWriteTokens: 400 }, firstTokenMs: 3000, decodeMs: 1000, tokensPerSecond: 42, turnName: 'Fix the login bug', effort: 'high' },
+    { id: 'root:1:2', sessionId: 'root', sessionName: 'Root', turn: 1, step: 2, startedAt: 30, finishedAt: 40, provider: 'p', model: 'm', status: 'failed', totals: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, firstTokenMs: null, tokensPerSecond: null, turnName: 'Fix the login bug', effort: 'high' },
     { id: 'root:2:1', sessionId: 'root', sessionName: 'Root', turn: 2, step: 1, startedAt: 50, finishedAt: 60, provider: 'p', model: 'm', status: 'completed', totals: { uncachedInputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 }, firstTokenMs: null, tokensPerSecond: null, turnName: 'Add regression tests', effort: '' },
     { id: 'child:1:1', sessionId: 'child', sessionName: 'A very long full subagent session name that must have a tooltip', turn: 1, step: 1, startedAt: 15, finishedAt: 25, provider: 'p', model: 'm', status: 'completed', totals: { uncachedInputTokens: 5, outputTokens: 6, cacheReadTokens: 7, cacheWriteTokens: 8 }, firstTokenMs: null, tokensPerSecond: null, turnName: 'Subagent turn topic', effort: '' },
   ],
@@ -121,7 +121,7 @@ function viewHarness() {
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'fragment' }
     if (name === 'react') return { useState(initial) { const i = cursor++; if (!(i in state)) state[i] = typeof initial === 'function' ? initial() : initial; return [state[i], value => { state[i] = typeof value === 'function' ? value(state[i]) : value }] } }
     if (name === './session-usage-core.ts') return { billedTotal, cacheHitPercentOf }
-    if (name === './format.ts') return { formatCompact, formatTokens, normalizeModelName }
+    if (name === './format.ts') return { formatCompact, formatTokens, normalizeModelName, decodeRateOf }
     if (name === './SessionUsageView.module.css') return { __esModule: true, default: css }
     if (name === './session-usage-locales.ts') return { SESSION_USAGE_NS: 'sessionUsage' }
     if (name === './use-session-detail.ts') return { useSessionDetail: () => ({ detail: fixture, loading: false, error: false, retry() {} }) }
@@ -169,6 +169,15 @@ test('Usage request log folds by turn: groups start collapsed, toggle, and expan
   assert.ok(!all.some(n => n.props?.className === 'requestBody'), 'metrics no longer sit on a second line under the head')
   const requestRows = all.filter(n => n.props?.className === 'turnRequest')
   assert.ok(requestRows.length > 0, 'request rows render')
+  // Inside a turn the newest request comes first; turn groups stay in
+  // chronological order (root turn 1 reverses its two steps, then 2, then child).
+  assert.deepEqual(requestRows.map(row => row.key), ['root:1:2', 'root:1:1', 'root:2:1', 'child:1:1'])
+  // The status label trails the thinking-level badge: the row reads
+  // route → effort → status ("· high 失败"), never status before effort.
+  // Spread first: nodes() may return a vm-realm array whose prototype
+  // deepStrictEqual would reject against a host-realm literal.
+  const statusCells = nodes(requestRows.find(row => row.key === 'root:1:2').props.children).filter(n => n.props?.className === 'effort' || n.props?.className === 'bad')
+  assert.deepEqual([...statusCells.map(n => n.props.className)], ['effort', 'bad'], 'effort badge renders before the status text')
   assert.ok(all.some(n => n.type === 'svg' && n.props['data-model'] === 'm'), 'each request row leads with its model logo')
   for (const row of requestRows) {
     const cells = [row.props.children].flat(Infinity).filter(Boolean)
@@ -177,6 +186,12 @@ test('Usage request log folds by turn: groups start collapsed, toggle, and expan
   }
   assert.ok(all.some(n => String(n.props?.children ?? '').includes('首字耗时 3 秒')), 'meta line keeps first-token timing')
   assert.ok(all.some(n => String(n.props?.children ?? '').includes('42 token/秒')), 'meta line keeps throughput')
+  // The turn summary and the card fold decode windows instead of averaging the
+  // per-request rates (the failed row has no window: 200 tokens / 1.0 s).
+  const turnRate = all.find(n => Array.isArray(n.props?.children) && n.props.children[0] === '平均速率')
+  assert.deepEqual([...turnRate.props.children], ['平均速率', ' ', 200, ' ', 'token/秒'], 'turn rate divides by decode windows')
+  assert.ok(all.some(n => n.props?.className === 'statValue' && n.props.children === '96 tok/s'), 'the card speed is the same decode rate')
+  assert.ok(!all.some(n => String(n.props?.children ?? '').includes('42 token/秒') && String(n.props?.className ?? '') === 'statValue'), 'the card never shows a per-request rate')
   assert.ok(!all.some(n => n.props?.className === 'recordFacts'), 'old fact grid is replaced by the row-end metrics')
 })
 
