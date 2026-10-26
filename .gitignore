@@ -11,3 +11,10 @@ package-lock.json
 Thumbs.db
 # one-off check against a local real session log — run manually, never publish
 tests/_verify-real.mjs
+
+# scratch files from one-off visual comparisons, measurements, previews
+/_*
+/build_err.txt
+/design/
+/designs/
+/heatmap-compare.png
