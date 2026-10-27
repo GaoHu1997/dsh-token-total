@@ -8,6 +8,7 @@ import type {
   UsageSessionStore,
 } from './context-types.ts'
 import { UsageFold } from './collector.ts'
+import { buildSessionContextWindow } from './context-window.ts'
 import { resolveModelNames, resolveProviderNames } from './model-names.ts'
 import { decodeRateOf } from './shared.ts'
 import type { SessionUsageDetail, SessionUsageTotals } from './wire.ts'
@@ -208,7 +209,7 @@ async function one(p: UsageSessionPersistence, id: string, header: UsageSessionH
   // a cancelled step is not a wait the reader experienced as an answer.
   const firsts = records.filter(x => x.status === 'completed').map(x => x.firstTokenMs).filter((x): x is number => x !== null)
   for (const x of records) { x.turnName = turnTopics.get(x.turn) ?? ''; delete (x as any)._attempt; delete (x as any)._lastUsage }
-  return { id, name, header, totals, records: records as SessionUsageDetail['records'], requests, averageFirstTokenMs: firsts.length ? firsts.reduce((a, b) => a + b, 0) / firsts.length : null, tokensPerSecond: decodeRateOf(records) }
+  return { id, name, header, totals, records: records as SessionUsageDetail['records'], requests, averageFirstTokenMs: firsts.length ? firsts.reduce((a, b) => a + b, 0) / firsts.length : null, tokensPerSecond: decodeRateOf(records), context: buildSessionContextWindow(own) }
 }
 
 export async function buildSessionUsageDetail(persistence: UsageSessionPersistence, sessions: UsageSessionStore | undefined, rootId: string, ctx?: Context): Promise<SessionUsageDetail> {
@@ -246,5 +247,5 @@ export async function buildSessionUsageDetail(persistence: UsageSessionPersisten
   // The card is scoped to this session and every subagent, so its speed and
   // first-token average fold the same records its token totals do.
   const firsts = records.filter(x => x.status === 'completed').map(x => x.firstTokenMs).filter((x): x is number => x !== null)
-  return { sessionId: rootId, totals, requests: parts.reduce((n, p) => n + p.requests, 0), averageFirstTokenMs: firsts.length ? firsts.reduce((a, b) => a + b, 0) / firsts.length : null, tokensPerSecond: decodeRateOf(records), subagents, models: [...models.entries()].map(([model, x]) => { const name = displayNameOf(model, x.providers); return { model, ...(name ? { name } : {}), providers: [...x.providers].map(provider => providerNames[provider] || provider), totals: x.totals, requests: x.requests } }), records, routes: [...routeMap.values()] }
+  return { sessionId: rootId, totals, requests: parts.reduce((n, p) => n + p.requests, 0), averageFirstTokenMs: firsts.length ? firsts.reduce((a, b) => a + b, 0) / firsts.length : null, tokensPerSecond: decodeRateOf(records), subagents, models: [...models.entries()].map(([model, x]) => { const name = displayNameOf(model, x.providers); return { model, ...(name ? { name } : {}), providers: [...x.providers].map(provider => providerNames[provider] || provider), totals: x.totals, requests: x.requests } }), records, routes: [...routeMap.values()], context: parts[0]?.context ?? null }
 }

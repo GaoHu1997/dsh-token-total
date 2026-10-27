@@ -701,7 +701,10 @@ export class UsageCollector {
       const writeSample = target === 'hours'
         ? (sample: UsageSample): Promise<void> => this.store.recordHours(sample)
         : target === 'failures'
-          ? (sample: UsageSample): Promise<void> => this.store.recordFailure(sample)
+          // The failure pass folds whole logs, yet ONLY failed calls may move
+          // its counter (recordFailure guards it again — this early return
+          // just skips the no-op write for the vast majority of samples).
+          ? (sample: UsageSample): Promise<void> => sample.failed ? this.store.recordFailure(sample) : Promise.resolve()
           : (sample: UsageSample): Promise<void> => this.store.record(sample)
       const flushCompleted = async (): Promise<void> => {
         if (completed.length === 0) return

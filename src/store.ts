@@ -608,8 +608,16 @@ export class UsageStore {
   /** Fold ONLY the failure count of a sample into the day and hour rows. The
    *  failure upgrade pass uses this: its replay walks logs the token passes
    *  already consumed, so the tokens and the request marker must not be added
-   *  a second time — only the failed-call counter may move. */
+   *  a second time — only the failed-call counter may move.
+   *
+   *  A sample WITHOUT the `failed` marker counts NOTHING here. The pass folds
+   *  whole session logs, which are mostly successful calls: passing every
+   *  folded sample through a write that hardcodes `failed: true` would count
+   *  each call's request marker AND token sample as two extra "failures" —
+   *  exactly how stores upgrading through v1.0.2–v1.0.8 ended up with
+   *  failures ≈ 2 × requests on every pre-upgrade day ("失败的比总的都多"). */
   async recordFailure(sample: UsageSample): Promise<void> {
+    if (!sample.failed) return
     await this.record({
       day: sample.day,
       hour: sample.hour,

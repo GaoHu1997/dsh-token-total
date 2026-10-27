@@ -5,7 +5,8 @@ import { createRequire } from 'node:module'
 import { createContext, runInContext } from 'node:vm'
 import { usageEn, usageZh, usageZhTW } from '../src/client/session-usage-locales.ts'
 import { billedTotal, cacheHitPercentOf } from '../src/client/session-usage-core.ts'
-import { decodeRateOf, formatCompact, formatTokens } from '../src/client/format.ts'
+import { cacheRate, decodeRateOf, formatCompact, formatPercent, formatTokens } from '../src/client/format.ts'
+import * as contextWindowCore from '../src/client/context-window-core.ts'
 import { normalizeModelName } from '../src/shared.ts'
 
 const require = createRequire(import.meta.url)
@@ -13,6 +14,7 @@ const ts = require('typescript')
 const compile = async path => ts.transpileModule(await readFile(new URL(path, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
 const hookCode = await compile('../src/client/use-session-detail.ts')
 const viewCode = await compile('../src/client/SessionUsageView.tsx')
+const panelCode = await compile('../src/client/ContextWindowPanel.tsx')
 
 function hookHarness() {
   const state = [], effects = [], refs = [], queue = [], requests = [], timers = new Set(), listeners = new Map()
@@ -132,7 +134,8 @@ const fixture = {
     { id: 'child:1:1', sessionId: 'child', sessionName: 'A very long full subagent session name that must have a tooltip', turn: 1, step: 1, startedAt: 15, finishedAt: 25, provider: 'p', model: 'm', status: 'completed', totals: { uncachedInputTokens: 5, outputTokens: 6, cacheReadTokens: 7, cacheWriteTokens: 8 }, firstTokenMs: null, tokensPerSecond: null, turnName: 'Subagent turn topic', effort: '' },
   ],
 }
-function viewHarness() {
+function viewHarness(override) {
+  const detail = override ?? fixture
   const state = []
   let cursor = 0
   const css = new Proxy({}, { get: (_, key) => key === '__esModule' ? false : String(key) })
@@ -145,12 +148,16 @@ function viewHarness() {
     if (name === './format.ts') return { formatCompact, formatTokens, normalizeModelName, decodeRateOf }
     if (name === './SessionUsageView.module.css') return { __esModule: true, default: css }
     if (name === './session-usage-locales.ts') return { SESSION_USAGE_NS: 'sessionUsage' }
-    if (name === './use-session-detail.ts') return { useSessionDetail: () => ({ detail: fixture, loading: false, error: false, refresh() {}, updatedAt: 1 }) }
+    if (name === './use-session-detail.ts') return { useSessionDetail: () => ({ detail, loading: false, error: false, refresh() {}, updatedAt: 1 }) }
     if (name === './ModelLogo.tsx') return { ModelLogo: props => ({ type: 'svg', props: { className: props.className, 'data-model': props.model, 'data-name': props.name } }) }
+    // The context-window panel has its own harness below; here the view only has
+    // to place it (and keep it out when the host sent no snapshot).
+    if (name === './ContextWindowPanel.tsx') return { ContextWindowPanel: props => ({ type: 'section', props: { 'data-context-window': true, 'data-items': props.context.items.length, 'data-updated-at': props.updatedAt ?? null } }) }
+    if (name === './ContextWindowPanel.module.css') return { __esModule: true, default: css }
     assert.fail(name)
   }
   runInContext(viewCode, sandbox)
-  return () => { cursor = 0; return sandbox.exports.SessionUsageContent({ detail: fixture, t: key => usageZh[key] }) }
+  return () => { cursor = 0; return sandbox.exports.SessionUsageContent({ detail, t: key => usageZh[key], updatedAt: 1_730_000_000_000 }) }
 }
 function nodes(root) {
   if (root == null || typeof root !== 'object') return []
@@ -245,4 +252,175 @@ test('By-model card labels rows with model display names and gray providers on n
     const logo = nodes(cell).find(c => c.type === 'svg')
     assert.equal(logo.props['data-name'], name, `logo matcher receives the display name for ${model}`)
   }
+})
+
+// ── context-window panel ──────────────────────────────────────────────────
+const panelItems = [
+  { key: 'system:system-prompt', category: 'system', kind: 'system-prompt', label: '', count: 1, tokens: 4_500 },
+  { key: 'tools:acp_cache', category: 'tools', label: 'acp_cache', count: 1, tokens: 1_900 },
+  { key: 'tools:rest', category: 'tools', kind: 'rest', label: '', count: 20, tokens: 9_800 },
+  { key: 'memory:runtime-context', category: 'memory', kind: 'runtime-context', label: '', count: 1, tokens: 419 },
+  { key: 'files:wire', category: 'files', label: 'D:\\repo\\src\\wire.ts', count: 2, tokens: 4_700 },
+  { key: 'results:pwsh', category: 'results', label: 'pwsh', count: 63, tokens: 11_800 },
+  { key: 'conversation:user', category: 'conversation', kind: 'user', label: '', count: 3, tokens: 6_000 },
+  { key: 'conversation:assistant', category: 'conversation', kind: 'assistant', label: '', count: 3, tokens: 8_100 },
+]
+const panelTotal = panelItems.reduce((sum, item) => sum + item.tokens, 0)
+const contextFixture = {
+  totalTokens: panelTotal, contextWindow: 262_144, provider: 'group', model: 'glm-5.3',
+  cacheHitTokens: 40_000, cacheMissTokens: 10_000, cacheKnown: true, items: panelItems,
+}
+const panelT = (key, params) => String(usageZh[key]).replace(/\{(\w+)\}/g, (_, name) => params?.[name] ?? '')
+function panelHarness(context = contextFixture, panelProps = {}) {
+  const state = []
+  const refs = []
+  let cursor = 0
+  let dirty = false
+  const css = new Proxy({}, { get: (_, key) => key === '__esModule' ? false : String(key) })
+  const jsx = (type, props = {}, key) => typeof type === 'function' ? type(props) : { type, props, key }
+  // A measured host box: the treemap needs pixels, so the ref hands out a stub.
+  const host = { clientWidth: 640, clientHeight: 268, addEventListener() {}, removeEventListener() {} }
+  const sandbox = createContext({
+    exports: {},
+    window: { addEventListener() {}, removeEventListener() {} },
+    ResizeObserver: class { observe() {} disconnect() {} },
+  })
+  sandbox.require = name => {
+    if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'fragment' }
+    if (name === 'react') return {
+      useState(initial) {
+        const i = cursor++
+        if (!(i in state)) state[i] = typeof initial === 'function' ? initial() : initial
+        return [state[i], value => {
+          const next = typeof value === 'function' ? value(state[i]) : value
+          if (!Object.is(next, state[i])) { state[i] = next; dirty = true }
+        }]
+      },
+      useRef(initial) { const i = cursor++; if (refs[i] === undefined) refs[i] = { current: initial === null ? host : initial }; return refs[i] },
+      useMemo(factory) { cursor++; return factory() },
+      useLayoutEffect(effect) { cursor++; effect() },
+    }
+    if (name === './context-window-core.ts') return contextWindowCore
+    if (name === './format.ts') return { cacheRate, formatCompact, formatPercent, formatTokens }
+    if (name === './session-usage-locales.ts') return {}
+    if (name === './ContextWindowPanel.module.css') return { __esModule: true, default: css }
+    assert.fail(name)
+  }
+  runInContext(panelCode, sandbox)
+  // Render to a fixpoint: the treemap measures its box in a layout effect, so
+  // the first pass has no pixels yet — React would re-render, and so does this.
+  return () => {
+    let tree
+    for (let pass = 0; pass < 6; pass++) {
+      cursor = 0
+      dirty = false
+      tree = sandbox.exports.ContextWindowPanel({ context, t: panelT, ...panelProps })
+      if (!dirty) break
+    }
+    return tree
+  }
+}
+const classes = node => String(node.props?.className ?? '').split(/\s+/).filter(Boolean)
+/** Every string a subtree renders, JSX-adjacent pieces glued back together. */
+const textOf = root => nodes(root)
+  .map(node => Array.isArray(node.props?.children) ? node.props.children.filter(piece => typeof piece === 'string').join('') : node.props?.children)
+  .filter(value => typeof value === 'string')
+  .join(' ')
+
+test('the context-window panel sits between the detail tables and the request records', () => {
+  const without = nodes(viewHarness()())
+  assert.ok(!without.some(n => n.props?.['data-context-window'] === true), 'no snapshot, no panel')
+  const withContext = nodes(viewHarness({ ...fixture, context: contextFixture })())
+  const panel = withContext.find(n => n.props?.['data-context-window'] === true)
+  assert.ok(panel, 'the panel appears when the host sent a snapshot')
+  assert.equal(panel.props['data-items'], panelItems.length)
+  // The read timestamp rides along so the panel can stamp its own refresh.
+  assert.equal(panel.props['data-updated-at'], 1_730_000_000_000)
+  // Document order: the scope note and cards, then the subagent/model tables,
+  // then the context window, then the per-turn request records.
+  const at = withContext.indexOf(panel)
+  assert.ok(at > withContext.findIndex(n => n.props?.className === 'mid'), 'the panel follows the subagent/model tables')
+  assert.ok(at < withContext.findIndex(n => n.props?.className === 'turnList'), 'the panel precedes the request records')
+})
+
+test('the context-window panel reads the used total, the window and the prompt-cache split', () => {
+  const all = nodes(panelHarness()())
+  assert.ok(all.some(n => n.type === 'h2' && n.props.children === '上下文窗口'))
+  assert.ok(all.some(n => n.props?.className === 'model' && n.props.children === 'group/glm-5.3'), 'the model is named with its provider')
+  assert.ok(all.some(n => n.props?.className === 'livePill'), 'a live pill marks the panel as current')
+  assert.ok(all.some(n => String(n.props?.children ?? '').includes('已用上下文')))
+  assert.equal(all.find(n => n.props?.className === 'total').props.children[0], '47.2K')
+  assert.equal(all.find(n => n.props?.className === 'window').props.children, '模型窗口 262.1K · 已用 18%')
+  // Cache legends quote both halves of the newest answer's prompt.
+  const legendText = textOf(all.filter(n => n.props?.className === 'cacheLegend'))
+  assert.ok(legendText.includes('命中 80.0%'), `hit legend reads ${legendText}`)
+  assert.ok(legendText.includes('未命中 20.0%'))
+})
+
+test('the treemap tiles every block with its size and category, and folds repeats', () => {
+  const all = nodes(panelHarness()())
+  const tiles = all.filter(n => classes(n).includes('tile'))
+  assert.equal(tiles.length, panelItems.length)
+  const text = tiles.map(textOf).join(' | ')
+  assert.ok(text.includes('acp_cache'), 'a tool keeps its name')
+  assert.ok(text.includes('pwsh ×63'), 'a repeated tool shows its call count')
+  assert.ok(text.includes('用户消息 ×3'), 'a repeated message kind shows its count')
+  assert.ok(text.includes('另外 20 项'), 'the folded tail is named')
+  assert.ok(text.includes('D:\\repo\\src\\wire.ts'), 'a file block carries its path')
+  assert.ok(text.includes('4.7K · 文件'), 'each tile quotes its size and category')
+  // Every tile is tinted by its category, and the legend names all six.
+  assert.ok(tiles.some(tile => classes(tile).includes('toneResults')))
+  const legendRows = all.filter(n => n.props?.className === 'legend').flatMap(n => nodes(n))
+  for (const name of ['系统提示词', '工具', '记忆', '文件', '工具结果', '会话内容']) {
+    assert.ok(legendRows.some(n => n.props?.children === name), `legend names ${name}`)
+  }
+})
+
+test('the panel collapses with balanced header padding and admits a cache it cannot see yet', () => {
+  const context = { ...contextFixture, cacheKnown: false, cacheHitTokens: 0, cacheMissTokens: 0 }
+  const render = panelHarness(context)
+  let all = nodes(render())
+  assert.ok(all.some(n => n.props?.className === 'cachePending' && n.props.children === '供应商回答可见'), 'an unanswered cache says so')
+  assert.ok(!all.some(n => classes(n).includes('cacheHit')), 'no invented hit bar')
+  const collapse = all.find(n => n.type === 'button' && n.props['aria-expanded'] !== undefined)
+  collapse.props.onClick()
+  all = nodes(render())
+  assert.equal(all.find(n => n.props?.className === 'body').props.hidden, true, 'the body folds away')
+  // Collapsed, the header pads its own bottom — the folded row keeps its shape.
+  assert.ok(classes(all.find(n => n.type === 'header')).includes('headCollapsed'), 'the collapsed header balances its padding')
+  all.find(n => n.type === 'button' && n.props['aria-expanded'] !== undefined).props.onClick()
+  all = nodes(render())
+  assert.equal(all.find(n => n.props?.className === 'body').props.hidden, false)
+  assert.ok(!classes(all.find(n => n.type === 'header')).includes('headCollapsed'), 'expanded, the extra padding goes away')
+  // The list view and its switcher are gone: the treemap is the only view.
+  assert.ok(!all.some(n => classes(n).includes('item')), 'no list rows remain')
+  assert.ok(!all.some(n => n.props?.['aria-pressed'] !== undefined), 'no view switcher remains')
+})
+
+test('hovering a tile opens a tip with its exact figures and shares', () => {
+  const render = panelHarness()
+  let all = nodes(render())
+  assert.ok(!all.some(n => n.props?.className === 'tip'), 'no tip before hovering')
+  const slot = all.find(n => classes(n).includes('slot') && String(n.props?.['aria-label'] ?? '').startsWith('pwsh'))
+  assert.ok(slot, 'the pwsh block has a tile')
+  slot.props.onMouseEnter()
+  all = nodes(render())
+  const tip = all.find(n => n.props?.className === 'tip')
+  assert.ok(tip, 'hovering opens the tip')
+  const text = textOf(tip)
+  assert.ok(text.includes('pwsh ×63'), 'the tip names the block and its count')
+  assert.ok(text.includes('11,800 token'), 'the tip quotes the exact count')
+  assert.ok(text.includes('工具结果'), 'the tip names the category')
+  assert.ok(text.includes('占上下文 25.0%'), `the tip shares the estimate (${text})`)
+  assert.ok(text.includes('占窗口 4.5%'), 'the tip shares the model window')
+  all.find(n => n.props?.className === 'map').props.onMouseLeave()
+  all = nodes(render())
+  assert.ok(!all.some(n => n.props?.className === 'tip'), 'leaving the map closes the tip')
+})
+
+test('the live pill stamps the last refresh when the host sends one', () => {
+  const stamped = nodes(panelHarness(contextFixture, { updatedAt: 1_730_000_000_000 })())
+  assert.ok(textOf(stamped.filter(n => n.props?.className === 'livePill')).match(/\d{1,2}:\d{2}/), 'the pill carries a clock time')
+  const bare = nodes(panelHarness()())
+  assert.ok(!textOf(bare.filter(n => n.props?.className === 'livePill')).match(/\d{1,2}:\d{2}/), 'without a timestamp the pill stays plain')
 })

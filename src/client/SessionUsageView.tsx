@@ -5,10 +5,11 @@ import { billedTotal, cacheHitPercentOf } from './session-usage-core.ts'
 import { formatCompact, formatTokens, normalizeModelName, decodeRateOf } from './format.ts'
 import { SESSION_USAGE_NS, type SessionUsageKey } from './session-usage-locales.ts'
 import { useSessionDetail } from './use-session-detail.ts'
+import { ContextWindowPanel } from './ContextWindowPanel.tsx'
 import { ModelLogo } from './ModelLogo.tsx'
 import css from './SessionUsageView.module.css'
 
-type T = (key: SessionUsageKey) => string
+type T = (key: SessionUsageKey, params?: Record<string, string>) => string
 type Row = SessionUsageDetail['records'][number]
 export type SessionUsageViewProps = PropsLocale<typeof SESSION_USAGE_NS> & { sessionId: string }
 
@@ -202,8 +203,16 @@ function Records({ detail, t }: { detail: SessionUsageDetail; t: T }): JSX.Eleme
 }
 
 /** Pure presentation export also used by offline visual regression fixtures. */
-export function SessionUsageContent({ detail, t }: { detail: SessionUsageDetail; t: T }): JSX.Element {
-  return <><p className={css.scope}>{t('scope')}</p><Metrics detail={detail} t={t} /><Tables detail={detail} t={t} /><Records key={detail.sessionId} detail={detail} t={t} /><p className={css.note}>{t('note')}</p></>
+export function SessionUsageContent({ detail, t, updatedAt }: { detail: SessionUsageDetail; t: T; updatedAt?: number | null }): JSX.Element {
+  return <>
+    <p className={css.scope}>{t('scope')}</p><Metrics detail={detail} t={t} /><Tables detail={detail} t={t} />
+    {/* The context window sits between the per-subagent/model tables and the
+        request records: it describes what the next request carries right now,
+        while everything above is spent-token history and everything below is
+        per-turn detail. */}
+    {detail.context ? <ContextWindowPanel context={detail.context} t={t} updatedAt={updatedAt} /> : null}
+    <Records key={detail.sessionId} detail={detail} t={t} /><p className={css.note}>{t('note')}</p>
+  </>
 }
 
 export function SessionUsageView({ sessionId, t }: SessionUsageViewProps): JSX.Element {
@@ -225,6 +234,6 @@ export function SessionUsageView({ sessionId, t }: SessionUsageViewProps): JSX.E
     </header>
     {loading && <p className={css.empty} role="status">{t('loading')}</p>}
     {error && <div className={css.error} role="status">{t('failedLoad')}<button type="button" className={css.action} onClick={refresh}>{t('retry')}</button></div>}
-    {detail && <SessionUsageContent detail={detail} t={t} />}
+    {detail && <SessionUsageContent detail={detail} t={t} updatedAt={updatedAt} />}
   </div></div>
 }

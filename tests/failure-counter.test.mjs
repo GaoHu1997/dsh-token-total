@@ -108,6 +108,21 @@ test('recordFailure moves only the failure counter (upgrade pass)', async () => 
   assert.equal(row.requests, 1, 'replayed requests must never be added twice')
 })
 
+test('recordFailure ignores a sample without the failed marker (v1.0.2–v1.0.8 regression)', async () => {
+  const { storage, store } = await openStore()
+  await store.record(sample({ request: true, inputTokens: 5 }))
+  // The upgrade pass replays whole session logs, so most folded samples are
+  // successful calls. v1.0.2 hardcoded failed:true here and inflated the
+  // failure counter to ~2x requests on every pre-upgrade day.
+  await store.recordFailure(sample({ inputTokens: 50, request: true }))
+  await store.recordFailure(sample({ inputTokens: 51, request: false }))
+  await store.recordFailure(sample({ inputTokens: 52, turn: true }))
+  const [row] = rowsOf(storage, 'days')
+  assert.equal(row.failures, 0, 'non-failed samples must count nothing')
+  assert.equal(row.requests, 1)
+  assert.equal(row.inputTokens, 5)
+})
+
 test('failure cursor round-trips, keeps the earliest live boundary and resets', async () => {
   const { storage, store } = await openStore()
   await store.record(sample({ request: true, inputTokens: 3 }))

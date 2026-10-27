@@ -1,6 +1,6 @@
 {
   "name": "dsh-token-total",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "DSH web plugin: token 用量统计看板 + 单会话（主智能体 + 子智能体）用量统计。提供今日/近3天/近7天/近1月/近3月/自定义筛选、六个汇总卡片、活跃热力图、缓存命中率折线与分模型柱状图、按模型/按供应商 Top5 列表。",
   "icon": "./icon.svg",
   "type": "module",

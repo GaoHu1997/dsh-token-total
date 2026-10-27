@@ -195,6 +195,59 @@ export interface SessionUsageDetail {
     model: string
     status: 'idle' | 'running' | 'completed' | 'failed'
   }>
+  /** The root session's live context composition, rendered above the cards.
+   *  Null when the log has no readable events (or on an older host). */
+  context?: SessionContextWindow | null
+}
+
+/** The six buckets the context-window panel paints, in legend order. They are
+ *  the buckets a reader thinks in: the harness prompt, the tool catalogue, the
+ *  injected memory (runtime context, skill catalog, compaction summaries), the
+ *  files the agent read, the remaining tool results, and the conversation. */
+export type SessionContextCategory = 'system' | 'tools' | 'memory' | 'files' | 'results' | 'conversation'
+
+/** One block of the context-window treemap: a tool, one file path, one folded
+ *  group of the same tool, or one message bucket. `tokens` is an ESTIMATE from
+ *  character counts (see context-window.ts), so the panel renders it as ~N. */
+export interface SessionContextItem {
+  /** Row key, unique inside one snapshot. */
+  key: string
+  category: SessionContextCategory
+  /** What to print: a tool name, a file path, or (for `kind`-bearing rows) the
+   *  localized kind label the panel substitutes. */
+  label: string
+  /** Machine kind the panel localizes ("system-prompt", "user", "rest", …).
+   *  Absent for rows whose label is itself the data (tool names, paths). */
+  kind?: string
+  /** How many log entries folded into this row (messages, tool calls). */
+  count: number
+  tokens: number
+}
+
+/** The context-window snapshot: what the session's next provider call would
+ *  carry, reconstructed from its own log (pruned events dropped, a compaction
+ *  summary standing in for the range it replaced, the newest request's tool
+ *  catalogue). Null when the session has no readable events yet. */
+export interface SessionContextWindow {
+  /** Sum of every item's estimated tokens. */
+  totalTokens: number
+  /** The model's window from the newest `request/context`, or null when the
+   *  host route never reported one (the panel then says "unknown"). */
+  contextWindow: number | null
+  provider: string
+  model: string
+  /** Prompt-cache split of the newest answer: cache reads vs new prompt tokens. */
+  cacheHitTokens: number
+  cacheMissTokens: number
+  /** Whether any answer reported usage (the cache bar needs one to draw). */
+  cacheKnown: boolean
+  /** Prompt tokens the provider billed on the newest answer
+   *  (`totalTokens − outputTokens`, or uncached + cached input): the real
+   *  occupancy. Upstream prompt compression can make it smaller than
+   *  `totalTokens`, which merely replays the stored log. */
+  promptTokens: number | null
+  /** Treemap blocks, largest first. */
+  items: SessionContextItem[]
 }
 
 /** The backfill (historical session scan) progress state. */

@@ -18,3 +18,5 @@ tests/_verify-real.mjs
 /design/
 /designs/
 /heatmap-compare.png
+# storage backups made while debugging the local history store
+/store-backup-*.json

@@ -1,0 +1,77 @@
+/* The context-window panel: magpie's shape on this page's surfaces — a header
+ * with the model and a live pill, the used total beside the newest answer's
+ * prompt-cache split, a treemap of what occupies the window, and one legend row
+ * naming the six buckets. Category colors live as custom properties on the tone
+ * classes so the tile and the legend dot share one palette. */
+.panel { background:#fff; border:1px solid #e4e7ee; border-radius:12px; margin:0 0 16px; overflow:hidden; }
+.head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 16px 0; }
+.headCollapsed { padding-bottom:12px; }
+.toggle { display:flex; align-items:center; gap:6px; min-width:0; background:none; border:0; padding:0; font:inherit; color:#394354; cursor:pointer; }
+.toggle h2 { font-size:13px; font-weight:600; margin:0; white-space:nowrap; }
+.chevron { flex:none; color:#99a1af; transition:transform .2s; }
+.chevronOpen { transform:rotate(90deg); }
+.headRight { display:flex; align-items:center; gap:8px; min-width:0; }
+.model { min-width:0; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; color:#8b93a4; }
+.livePill { display:inline-flex; align-items:center; gap:4px; flex:none; padding:1px 8px 1px 6px; border-radius:999px; background:#e9f8f1; color:#128a63; font-size:10px; font-weight:500; }
+.liveDot { width:5px; height:5px; border-radius:50%; background:#18a97b; box-shadow:0 0 0 2px #d6f2e5; }
+.liveTime { font-variant-numeric:tabular-nums; opacity:.85; }
+.toggle:focus-visible { outline:2px solid #2ab1c6; outline-offset:2px; }
+.body { padding:10px 16px 14px; }
+.body[hidden] { display:none; }
+.summary { display:grid; grid-template-columns:minmax(0,1fr) minmax(180px,260px); align-items:end; gap:18px; padding-bottom:12px; }
+.used { display:flex; flex-direction:column; gap:1px; min-width:0; }
+.label { font-size:11px; color:#8790a3; }
+.total { font-size:28px; font-weight:650; line-height:1.15; letter-spacing:-.6px; color:#1b2130; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.total small { margin-left:4px; font-size:11px; font-weight:500; letter-spacing:0; color:#98a0ae; }
+.window { font-size:11px; color:#939aab; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cache { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.cacheBar { display:flex; width:100%; height:5px; border-radius:999px; overflow:hidden; background:#eef0f4; }
+.cacheHit { height:100%; background:#2ec4a0; }
+.cacheMiss { height:100%; background:#dfe3ea; }
+.cacheEmpty { display:block; width:100%; height:100%; background:repeating-linear-gradient(90deg,#e6e9ef 0 3px,transparent 3px 7px); }
+.cacheLegend { display:flex; flex-wrap:wrap; gap:2px 10px; font-size:10px; color:#8b93a4; font-variant-numeric:tabular-nums; }
+.cacheLegend i { display:inline-block; width:6px; height:6px; margin-right:4px; border-radius:50%; }
+.cacheHitDot { background:#2ec4a0; }
+.cacheMissDot { background:#dfe3ea; }
+.cachePending { color:#9aa3b3; }
+.note { margin:0 0 10px; padding:5px 8px; border:1px solid #f2e4c6; border-radius:6px; background:#fdf7ea; font-size:10.5px; line-height:1.5; color:#8a6a2a; font-variant-numeric:tabular-nums; }
+.map { position:relative; height:268px; border-radius:9px; overflow:hidden; }
+/* Slots glide into their new geometry when a refresh re-writes the estimate,
+ * so a change in the data reads as motion instead of a silent repaint. */
+.slot { position:absolute; box-sizing:border-box; padding:1.5px; transition:left .35s, top .35s, width .35s, height .35s; }
+.tile { display:flex; flex-direction:column; gap:1px; box-sizing:border-box; width:100%; height:100%; padding:5px 6px; border:1px solid var(--ctx-line); border-radius:7px; background:var(--ctx-soft); color:var(--ctx-ink); overflow:hidden; }
+.tileLabel { font-size:11px; font-weight:600; line-height:1.25; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.tileSize { font-size:10px; opacity:.72; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-variant-numeric:tabular-nums; }
+/* The hover card: exact figures a tile has no room to print. */
+.tip { position:absolute; z-index:2; box-sizing:border-box; width:220px; padding:8px 10px; border:1px solid #e0e4ec; border-radius:8px; background:#fff; box-shadow:0 8px 20px rgba(23,32,54,.12); font-size:11px; line-height:1.55; pointer-events:none; }
+.tipName { font-weight:600; color:#1b2130; overflow-wrap:anywhere; }
+.tipMeta { color:#6f7889; font-variant-numeric:tabular-nums; }
+.tipShare { color:#4a5567; font-variant-numeric:tabular-nums; }
+.legend { display:flex; flex-wrap:wrap; gap:5px 14px; list-style:none; margin:0; padding:10px 0 0; border-top:1px solid #f2f4f8; margin-top:10px; font-size:11px; color:#6f7889; }
+.legend li { display:flex; align-items:center; gap:5px; }
+.legendName { white-space:nowrap; }
+.legendValue { color:#98a0ae; font-variant-numeric:tabular-nums; }
+.swatch { display:inline-block; flex:none; box-sizing:border-box; width:9px; height:9px; border-radius:3px; background:var(--ctx-soft); background:color-mix(in srgb, var(--ctx) 50%, var(--ctx-soft)); border:1px solid var(--ctx-line); }
+.empty { margin:0; padding:24px 0; text-align:center; font-size:12px; color:#9aa2b1; }
+/* Category palette: `--ctx` is the accent tint, `--ctx-soft` the tile fill (and
+ * the legend swatch, so the dots match the tiles exactly), `--ctx-ink` the tile
+ * text, `--ctx-line` its hairline border. */
+.toneSystem { --ctx:#a346e6; --ctx-soft:#f6ecfd; --ctx-ink:#6c2e9e; --ctx-line:#ecdafa; }
+.toneTools { --ctx:#4f79f6; --ctx-soft:#eaf0fe; --ctx-ink:#3a5aa8; --ctx-line:#d9e3fb; }
+.toneMemory { --ctx:#8fb21e; --ctx-soft:#f1f5d8; --ctx-ink:#5a7012; --ctx-line:#dfe8bd; }
+.toneFiles { --ctx:#18a97b; --ctx-soft:#e6f6ee; --ctx-ink:#1c7a56; --ctx-line:#d2ecdf; }
+.toneResults { --ctx:#e8853f; --ctx-soft:#fdeee3; --ctx-ink:#a35d24; --ctx-line:#f7ddc8; }
+.toneConversation { --ctx:#c2327f; --ctx-soft:#fbe9f3; --ctx-ink:#8c2259; --ctx-line:#f2d3e4; }
+@media (max-width:700px) {
+  .head { padding:11px 12px 0; }
+  .headCollapsed { padding-bottom:11px; }
+  .body { padding:9px 12px 12px; }
+  .summary { grid-template-columns:minmax(0,1fr); gap:10px; }
+  .total { font-size:24px; }
+  .map { height:220px; }
+  .model { display:none; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .chevron { transition:none; }
+  .slot { transition:none; }
+}
