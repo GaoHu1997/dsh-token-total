@@ -157,14 +157,52 @@ export function ContextWindowPanel({ context, t, updatedAt }: {
       value: formatCompact(context.contextWindow),
       percent: String(percent ?? 0),
     })
+  // Folded, the body's figures are out of sight, so the header carries the
+  // digest itself: used / window · share, then a strip whose whole length is
+  // the model's window — the tinted part is what is in use, cut into the six
+  // buckets in legend order, and the grey tail is the room still free. So the
+  // bar reads as occupancy, not as a share of itself. Both read the same
+  // snapshot the body does, so every poll redraws them in place — the figures
+  // and the proportions stay live without the panel ever being opened.
+  const categoryTotal = totals.reduce((sum, row) => sum + row.tokens, 0)
+  // Without a reported window there is no "free room" to draw: the strip spans
+  // what is in use instead of inventing a denominator.
+  const windowKnown = context.contextWindow !== null && context.contextWindow > 0
+  const usedShare = windowKnown
+    ? Math.min(100, Math.max(0, reading.usedTokens / context.contextWindow! * 100))
+    : 100
+  const freeTokens = windowKnown ? Math.max(0, context.contextWindow! - reading.usedTokens) : 0
+  const digestLabel = [
+    `${t('contextUsed')} ${formatTokens(reading.usedTokens)} token`,
+    ...totals.map(row => `${t(CATEGORY_LABEL[row.key])} ${formatCompact(row.tokens)}`),
+    windowKnown ? `${t('contextFree')} ${formatTokens(freeTokens)} token` : windowText,
+  ].join(' · ')
+  const digestText = context.contextWindow === null
+    ? t('contextDigestUnknown', { used: formatCompact(reading.usedTokens) })
+    : t('contextDigest', {
+      used: formatCompact(reading.usedTokens),
+      window: formatCompact(context.contextWindow),
+      percent: String(percent ?? 0),
+    })
   return <section className={css.panel} data-dsh-context-window>
     {/* Collapsed, the body's spacing is gone, so the header pads its own
         bottom — otherwise the folded row reads heavy on top. */}
     <header className={open ? css.head : `${css.head} ${css.headCollapsed}`}>
-      <button type="button" className={css.toggle} onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="dsh-context-window-body">
-        <svg className={`${css.chevron} ${open ? css.chevronOpen : ''}`} width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="m4 2 4 4-4 4" stroke="currentColor" strokeWidth="1.5" fill="none" /></svg>
-        <h2>{t('contextTitle')}</h2>
-      </button>
+      <div className={css.headLead}>
+        <button type="button" className={css.toggle} onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="dsh-context-window-body">
+          <svg className={`${css.chevron} ${open ? css.chevronOpen : ''}`} width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="m4 2 4 4-4 4" stroke="currentColor" strokeWidth="1.5" fill="none" /></svg>
+          <h2>{t('contextTitle')}</h2>
+        </button>
+        {!open && <div className={css.digest}>
+          <span className={css.digestTotal} title={`${t('contextUsed')} ${formatTokens(reading.usedTokens)} token · ${windowText}`}>
+            {digestText}
+          </span>
+          {categoryTotal > 0 && <span className={css.digestBar} role="img" aria-label={digestLabel} title={digestLabel}>
+            {totals.map(row => <span key={row.key} className={`${css.digestSeg} ${CATEGORY_TONE[row.key]}`}
+              style={{ width: `${row.tokens / categoryTotal * usedShare}%` }} />)}
+          </span>}
+        </div>}
+      </div>
       <div className={css.headRight}>
         {model !== '' && <span className={css.model} title={`${context.provider} / ${context.model}`}>{model}</span>}
         <span className={css.livePill}>

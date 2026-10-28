@@ -397,6 +397,52 @@ test('the panel collapses with balanced header padding and admits a cache it can
   assert.ok(!all.some(n => n.props?.['aria-pressed'] !== undefined), 'no view switcher remains')
 })
 
+test('folded, the header carries a live digest of what fills the window', () => {
+  const render = panelHarness()
+  let all = nodes(render())
+  assert.ok(!all.some(n => classes(n).includes('digest')), 'expanded, the body speaks for itself')
+  all.find(n => n.type === 'button' && n.props['aria-expanded'] !== undefined).props.onClick()
+  all = nodes(render())
+  assert.ok(all.some(n => classes(n).includes('digest')), 'the folded header summarizes the window')
+  // The used figure leads, then the model window and the share it fills, so the
+  // folded row answers "how full" before the strip answers "with what".
+  const total = all.find(n => classes(n).includes('digestTotal'))
+  const expectedDigest = usageZh.contextDigest
+    .replace('{used}', formatCompact(panelTotal))
+    .replace('{window}', '262.1K')
+    .replace('{percent}', String(Math.round(panelTotal / 262_144 * 100)))
+  assert.equal(total.props.children, expectedDigest)
+  assert.ok(expectedDigest.startsWith(`${formatCompact(panelTotal)} / `), 'used over window comes first')
+  assert.ok(String(total.props.title).includes(formatTokens(panelTotal)), 'the tooltip keeps the exact count')
+  assert.ok(String(total.props.title).includes('262.1K'), 'the tooltip names the model window')
+  // One segment per non-empty bucket, in legend order. The strip's whole length
+  // is the model's window, so each segment takes its share of what is used,
+  // times the share of the window in use — the grey track behind it is the room
+  // still free, and the tinted part ends exactly where "used" ends.
+  const categorySum = key => panelItems.filter(item => item.category === key).reduce((sum, item) => sum + item.tokens, 0)
+  const usedShare = panelTotal / 262_144 * 100
+  const expected = ['system', 'tools', 'memory', 'files', 'results', 'conversation']
+    .map(key => ({ key, share: categorySum(key) / panelTotal * usedShare }))
+    .filter(row => row.share > 0)
+  const segs = all.filter(n => classes(n).includes('digestSeg'))
+  assert.deepEqual(segs.map(n => n.props.style.width), expected.map(row => `${row.share}%`))
+  const painted = segs.reduce((sum, n) => sum + parseFloat(n.props.style.width), 0)
+  assert.ok(Math.abs(painted - usedShare) < 0.001, 'the tinted part spans exactly the used share, leaving the rest grey')
+  assert.deepEqual(segs.map(n => classes(n)[1]), expected.map(row => `tone${row.key[0].toUpperCase()}${row.key.slice(1)}`), 'segments keep their category tint')
+  const bar = all.find(n => classes(n).includes('digestBar'))
+  for (const name of ['系统提示词', '工具', '记忆', '文件', '工具结果', '会话内容']) {
+    assert.ok(String(bar.props['aria-label']).includes(name), `the digest names ${name}`)
+  }
+  // The grey tail is the free room, named in the same tooltip that names the
+  // buckets, so "how much is left" is readable without opening the panel.
+  assert.ok(String(bar.props['aria-label']).includes(`空闲 ${formatTokens(262_144 - panelTotal)} token`), 'the label names the free room')
+  // The digest is a header-only view of the same snapshot: opening the panel
+  // hides it again rather than duplicating the figures.
+  all.find(n => n.type === 'button' && n.props['aria-expanded'] !== undefined).props.onClick()
+  all = nodes(render())
+  assert.ok(!all.some(n => classes(n).includes('digest')), 'expanded, the digest steps aside')
+})
+
 test('hovering a tile opens a tip with its exact figures and shares', () => {
   const render = panelHarness()
   let all = nodes(render())
