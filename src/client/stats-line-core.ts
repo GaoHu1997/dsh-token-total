@@ -314,16 +314,25 @@ const CJK_TOKENS_PER_CHAR = 0.6
 const ASCII_TOKENS_PER_CHAR = 0.3
 
 /**
- * Shortest observable decode window before a live rate is published, in ms
- * (the same floor MiMo-Code's sidebar tps uses). Below it the first chunk's
- * burst would read as hundreds of tok/s; the sampler also publishes its FIRST
- * reading at exactly this mark rather than at the next steady cadence.
+ * Shortest observable decode window before a live rate is published, in ms.
+ * Below it the first chunk's burst would read as hundreds of tok/s; the
+ * sampler also publishes its FIRST reading at exactly this mark rather than at
+ * the next steady cadence.
+ *
+ * The floor is deliberately short — 200 ms, down from the 500 ms MiMo-Code's
+ * sidebar tps holds — because every step opens a window of its own, and at
+ * 500 ms a step that finishes inside the floor never published at all: a run
+ * of short steps (one burst of tool-call arguments, then settle) kept showing
+ * a figure measured somewhere else while the screen was full of live output.
+ * At this length the opening burst is judged by the plausibility check below
+ * rather than by waiting it out, and the smoothing constant still carries the
+ * first reading only part of the way into an established figure.
  *
  * The floor is a publishing gate, NOT a rejection gate: it is applied after the
  * plausibility check below, so a backlog frame can never dodge that check by
  * arriving early (see {@link StreamingRateSampler.observe}).
  */
-const MIN_STREAM_WINDOW_MS = 500
+const MIN_STREAM_WINDOW_MS = 200
 
 /**
  * Longest window a live rate may span, in ms. This is the bound the previous

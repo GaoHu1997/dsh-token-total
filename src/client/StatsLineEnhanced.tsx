@@ -31,8 +31,13 @@
  * cannot see.
  *
  * Streaming throughput replaces the gauge pill's speed
- * figure with a live estimate while a step is still streaming and drops back to
- * the official session figure the moment it settles. That subscription lives in
+ * figure with a live estimate of what is happening now. The figure is the
+ * streaming step's measured rate while one streams and the LAST measured rate
+ * once it settles — a session average describes the whole session's past, and
+ * it cannot match the pace of the answer on screen, which is what users read
+ * as the pill disagreeing with the stream in front of them. The official
+ * session figure only shows on a session that has never streamed. That
+ * subscription lives in
  * its own child component so stream deltas never re-render the pills. The live
  * figure itself is measured by a bounded sliding window over observed token
  * growth (stats-line-core's StreamingRateSampler): the earlier cumulative
@@ -176,17 +181,19 @@ const LIVE_SPEED_REFRESH_MS = 1_000
  * The gauge pill's always-on streaming speed slot.
  *
  * It subscribes to `legacy.partial` itself so per-frame deltas re-render only
- * this child, not the surrounding pills. Until the streaming step has a
- * measurable window the official session
- * figure stays on screen, so the slot is never empty and the handover at
- * settle is a plain value change.
+ * this child, not the surrounding pills. The figure it carries is the CURRENT
+ * stream's measured rate, and it stays that rate once the step settles:
+ * tool execution and the gap between steps happen inside the same answer, and
+ * the session average this slot used to fall back to there is a figure from
+ * the whole session's past — a number that cannot match the pace of the answer
+ * on screen, which is what reads as "not the real-time speed". The official
+ * session figure is only a session's opening state, shown until the first
+ * window measures anything.
  *
  * One window covers a whole step, across every output kind the accumulator
  * carries — reasoning, answer text, and Tool-call arguments — because the
  * provider bills all three as completion tokens and a step emits them in
- * sequence. Between steps the partial is gone (the step's assistant/message
- * settles it and the next step has not begun), so Tool execution shows the
- * official figure until the next step opens its own window.
+ * sequence.
  *
  * Sampling happens in a layout effect and the figure it yields is published as
  * state, so no render reads a clock or mutates the window: a render React starts
@@ -198,7 +205,7 @@ function LiveSpeed({ useChat, scale, fallback, t }: {
   useChat: ChatSnapshotSelectorHook
   /** Correction measured from this session's settled steps (1 = raw prior). */
   scale: number
-  /** The official session figure, shown until the estimate means something. */
+  /** The official session figure, shown until the slot has measured its own. */
   fallback: string | null
   t: T
 }) {
@@ -216,14 +223,13 @@ function LiveSpeed({ useChat, scale, fallback, t }: {
     sampler.current = { key, rate: new StreamingRateSampler() }
   }
   const rate = sampler.current.rate
-  // The reading the effect below produced, tagged with the step it describes. The
-  // tag is what keeps a switch honest: the frame after a switch renders before the
-  // new step's first observation lands, and without it that frame would show the
-  // previous step's rate.
-  const [published, setPublished] = useState<{ key: string | null; rate: number | null }>({
-    key: null,
-    rate: null,
-  })
+  // The latest figure this slot has measured, held across step boundaries. A
+  // settled step's rate is still the conversation's current speed until the
+  // next step measures its own, so the display keeps it instead of switching to
+  // a session average the moment the stream goes quiet — holding it is the
+  // point, not a stale value to guard against, which is why no step tag rides
+  // along any more.
+  const [reading, setReading] = useState<number | null>(null)
   const scaleRef = useRef(scale)
   // Every delta re-runs this (its dependencies move), and the beat re-runs it once
   // a second so a step that has gone quiet still advances its window.
@@ -237,10 +243,13 @@ function LiveSpeed({ useChat, scale, fallback, t }: {
       rate.reset()
     }
     rate.observe(tokens, Date.now())
+    // A null here means the fresh window has not measured anything yet (a step
+    // that just opened, or one that re-anchored); the figure already on screen
+    // is still the best current reading, so it is left alone.
     const next = rate.ratePerSecond()
-    setPublished((previous) => (
-      previous.key === key && previous.rate === next ? previous : { key, rate: next }
-    ))
+    if (next !== null) {
+      setReading(previous => (previous === next ? previous : next))
+    }
   }, [tokens, key, beat, rate, scale])
   // Keyed on "a step is streaming", not on the step identity: switching steps
   // must not tear the beat down and defer the next one by a full period.
@@ -250,7 +259,6 @@ function LiveSpeed({ useChat, scale, fallback, t }: {
     const handle = setInterval(() => { setBeat(Date.now()) }, LIVE_SPEED_REFRESH_MS)
     return () => { clearInterval(handle) }
   }, [streaming])
-  const reading = published.key === key ? published.rate : null
   return <SpeedFigure text={reading === null
     ? fallback
     : t('stats.tokensPerSecond', { throughput: formatTokensPerSecond(reading) })} />

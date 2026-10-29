@@ -137,6 +137,22 @@ test('streaming sampler publishes measured growth and a new step starts without 
   sampler.observe(150, 2000)
   assert.equal(sampler.ratePerSecond(), 50)
   assert.equal(new core.StreamingRateSampler().ratePerSecond(), null)
+  // The publishing floor is short, so a step that ends quickly still publishes
+  // its own pace instead of the row showing a figure measured elsewhere.
+  const quick = new core.StreamingRateSampler()
+  quick.observe(100, 0)
+  quick.observe(130, 300)
+  assert.equal(quick.ratePerSecond(), 100)
+})
+
+test('the live speed slot holds its last measured figure across a settle', () => {
+  // The official session average is a figure from the whole session's past; it
+  // must not replace the current speed the moment a step settles (tool
+  // execution is most of a tool-heavy answer). The slot keeps its reading in
+  // state, and only a session that never streamed shows the official figure.
+  assert.match(pillSource, /const \[reading, setReading\] = useState<number \| null>\(null\)/)
+  assert.match(pillSource, /if \(next !== null\) \{\s*setReading\(previous/)
+  assert.doesNotMatch(pillSource, /published\.key === key/)
 })
 
 test('both composer layouts have no preference gates; panel has no enhancement or rebuild switches', async () => {
