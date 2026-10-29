@@ -132,6 +132,18 @@ function promptTokensOf(usage: unknown): number | null {
   return input + cached > 0 ? input + cached : null
 }
 
+/** Prompt tokens one tool definition costs: its name, description and JSON
+ *  schema, plus the framing every schema node pays. 0 for a nameless entry.
+ *  Shared with the spend composition, which replays the same catalogue on
+ *  every request. */
+export function toolTokens(tool: unknown): number {
+  const record = tool as { name?: unknown; description?: unknown; parameters?: unknown }
+  const name = String(record?.name ?? '')
+  if (name === '') return 0
+  return estimateTokens(name) + valueTokens(record?.description)
+    + estimateTokens(JSON.stringify(record?.parameters ?? {})) + TOOL_SCHEMA_OVERHEAD_TOKENS
+}
+
 /** Fold one category's rows: keep the biggest until KEEP_SHARE is covered (and
  *  never more than MAX_ROWS_PER_CATEGORY), then merge the tail into one row so
  *  a session with 200 tool calls still yields a readable treemap. */
@@ -279,11 +291,9 @@ export function buildSessionContextWindow(events: readonly UsageSessionEvent[]):
   }
   // The tool catalogue the next call sends: name + description + JSON schema.
   for (const tool of tools) {
-    const record = tool as { name?: unknown; description?: unknown; parameters?: unknown }
-    const name = String(record?.name ?? '')
-    if (name === '') continue
-    const tokens = estimateTokens(name) + valueTokens(record?.description)
-      + estimateTokens(JSON.stringify(record?.parameters ?? {})) + TOOL_SCHEMA_OVERHEAD_TOKENS
+    const tokens = toolTokens(tool)
+    const name = String((tool as { name?: unknown })?.name ?? '')
+    if (name === '' || tokens === 0) continue
     add('tools', name, tokens)
   }
   const items = foldDrafts([...drafts.values()])

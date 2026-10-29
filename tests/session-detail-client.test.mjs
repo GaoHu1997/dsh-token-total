@@ -7,6 +7,7 @@ import { usageEn, usageZh, usageZhTW } from '../src/client/session-usage-locales
 import { billedTotal, cacheHitPercentOf } from '../src/client/session-usage-core.ts'
 import { cacheRate, decodeRateOf, formatCompact, formatPercent, formatTokens } from '../src/client/format.ts'
 import * as contextWindowCore from '../src/client/context-window-core.ts'
+import * as usageBuckets from '../src/usage-buckets.ts'
 import { normalizeModelName } from '../src/shared.ts'
 
 const require = createRequire(import.meta.url)
@@ -15,6 +16,7 @@ const compile = async path => ts.transpileModule(await readFile(new URL(path, im
 const hookCode = await compile('../src/client/use-session-detail.ts')
 const viewCode = await compile('../src/client/SessionUsageView.tsx')
 const panelCode = await compile('../src/client/ContextWindowPanel.tsx')
+const cardsCode = await compile('../src/client/UsageCards.tsx')
 
 function hookHarness() {
   const state = [], effects = [], refs = [], queue = [], requests = [], timers = new Set(), listeners = new Map()
@@ -150,10 +152,10 @@ function viewHarness(override) {
     if (name === './session-usage-locales.ts') return { SESSION_USAGE_NS: 'sessionUsage' }
     if (name === './use-session-detail.ts') return { useSessionDetail: () => ({ detail, loading: false, error: false, refresh() {}, updatedAt: 1 }) }
     if (name === './ModelLogo.tsx') return { ModelLogo: props => ({ type: 'svg', props: { className: props.className, 'data-model': props.model, 'data-name': props.name } }) }
-    // The context-window panel has its own harness below; here the view only has
-    // to place it (and keep it out when the host sent no snapshot).
-    if (name === './ContextWindowPanel.tsx') return { ContextWindowPanel: props => ({ type: 'section', props: { 'data-context-window': true, 'data-items': props.context.items.length, 'data-updated-at': props.updatedAt ?? null } }) }
-    if (name === './ContextWindowPanel.module.css') return { __esModule: true, default: css }
+    // The live cards have their own harness below; here the view only has to
+    // place them (and keep them out when the host sent neither a snapshot nor
+    // a spend composition).
+    if (name === './UsageCards.tsx') return { SessionUsageCards: props => props.detail.context || props.detail.composition ? { type: 'section', props: { 'data-usage-cards': true, 'data-items': props.detail.context?.items.length ?? 0, 'data-composition': props.detail.composition?.buckets.length ?? 0 } } : null }
     assert.fail(name)
   }
   runInContext(viewCode, sandbox)
@@ -270,6 +272,22 @@ const contextFixture = {
   totalTokens: panelTotal, contextWindow: 262_144, provider: 'group', model: 'glm-5.3',
   cacheHitTokens: 40_000, cacheMissTokens: 10_000, cacheKnown: true, items: panelItems,
 }
+/** The reference card's own figures: eight buckets over a 1.5M billed prompt. */
+const compositionFixture = {
+  buckets: [
+    { key: 'systemPrompt', tokens: 299_100 },
+    { key: 'user', tokens: 1_900 },
+    { key: 'skill', tokens: 58_000 },
+    { key: 'toolResult', tokens: 492_900 },
+    { key: 'toolDef', tokens: 18_500 },
+    { key: 'injected', tokens: 14_400 },
+    { key: 'assistant', tokens: 581_400 },
+    { key: 'output', tokens: 23_000 },
+  ],
+  billedTokens: 1_489_200,
+  totals: { uncachedInputTokens: 42_000, outputTokens: 23_000, cacheReadTokens: 1_424_200, cacheWriteTokens: 0 },
+  requests: 37,
+}
 const panelT = (key, params) => String(usageZh[key]).replace(/\{(\w+)\}/g, (_, name) => params?.[name] ?? '')
 function panelHarness(context = contextFixture, panelProps = {}) {
   const state = []
@@ -327,20 +345,93 @@ const textOf = root => nodes(root)
   .filter(value => typeof value === 'string')
   .join(' ')
 
-test('the context-window panel sits between the detail tables and the request records', () => {
+/** Render the two live cards in a bare JSX sandbox; the pure helpers are the
+ *  real modules, so this exercises the actual bucketing and formatting. */
+function cardsHarness(detailOverride = { ...fixture, context: contextFixture, composition: compositionFixture }) {
+  const css = new Proxy({}, { get: (_, key) => key === '__esModule' ? false : String(key) })
+  const jsx = (type, props = {}, key) => typeof type === 'function' ? type(props) : { type, props, key }
+  const sandbox = createContext({ exports: {} })
+  sandbox.require = name => {
+    if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'fragment' }
+    if (name === './context-window-core.ts') return contextWindowCore
+    if (name === './format.ts') return { cacheRate, formatCompact, formatPercent, formatTokens }
+    if (name === './session-usage-core.ts') return { cacheHitPercentOf }
+    if (name === '../usage-buckets.ts') return usageBuckets
+    if (name === './UsageCards.module.css') return { __esModule: true, default: css }
+    assert.fail(name)
+  }
+  runInContext(cardsCode, sandbox)
+  return () => sandbox.exports.SessionUsageCards({ detail: detailOverride, t: panelT })
+}
+
+test('the live cards pair the window composition with the session spend', () => {
+  const all = nodes(cardsHarness()())
+  assert.equal(all.filter(n => n.type === 'section').length, 2, 'both cards render side by side')
+  assert.ok(all.some(n => n.type === 'h2' && n.props.children === usageZh.currentContextTitle))
+  assert.ok(all.some(n => n.type === 'h2' && n.props.children === usageZh.statsTitle))
+  // Left card: used over window, occupancy, and the model that owns it.
+  const total = all.find(n => classes(n).includes('total'))
+  assert.equal(total.props.children, `${formatCompact(panelTotal)} / 262.1K tokens`)
+  assert.ok(all.some(n => n.props?.children === '18.0%'), 'the occupancy share is a whole percentage')
+  assert.ok(textOf(all.find(n => classes(n).includes('totalShare'))).includes(usageZh.contextUsedShort))
+  assert.ok(all.some(n => classes(n).includes('model') && n.props.children === 'group · glm-5.3'))
+  // One bar segment per NON-EMPTY bucket (the fixture has no skill-catalog
+  // row), and a 7-row legend — output never lives in the window, so it has no
+  // row here.
+  assert.equal(all.filter(n => classes(n).includes('barSeg')).length, 6)
+  // The strip is scaled to the model's window, not to the drawn content: the
+  // tinted run stops exactly where "used" stops and the track behind it is the
+  // room still free — the same reading the folded panel's digest gives.
+  const barSegs = all.filter(n => classes(n).includes('barSeg'))
+  const painted = barSegs.reduce((sum, n) => sum + parseFloat(n.props.style.width), 0)
+  const usedShare = panelTotal / 262_144 * 100
+  assert.ok(Math.abs(painted - usedShare) < 0.001, 'the tinted run spans exactly the used share, not the whole track')
+  const contextRows = all.filter(n => classes(n).includes('legendRow')).slice(0, 7)
+  assert.deepEqual(contextRows.map(n => n.props.children[1].props.children), [
+    usageZh.bucketSystemPrompt, usageZh.bucketUser, usageZh.bucketSkill, usageZh.bucketToolResult,
+    usageZh.bucketToolDef, usageZh.bucketInjected, usageZh.bucketAssistant,
+  ])
+  // The context legend divides by what the window holds, not by the billed total.
+  assert.ok(contextRows.some(n => textOf(n).includes('9.5%')), 'system prompt share')
+  assert.ok(contextRows.some(n => textOf(n).includes('24.8%')), 'tool definitions keep their own bucket')
+  assert.ok(contextRows.some(n => textOf(n).includes('34.9%')), 'file reads and tool results share one bucket')
+  // Right card: the billed ring, eight legend rows, exact cache split.
+  assert.ok(all.some(n => n.type === 'circle' && n.props.stroke === 'var(--bucket)'), 'the ring segments are drawn')
+  assert.equal(all.filter(n => n.type === 'circle' && n.props.stroke === 'var(--bucket)').length, 8)
+  assert.ok(all.some(n => n.type === 'strong' && classes(n).includes('ringTotal') && n.props.children === '1.5M'))
+  assert.ok(all.some(n => n.type === 'b' && textOf(n) === '97.14%'), 'cache hit uses the exact usage split')
+  const statsRows = all.filter(n => classes(n).includes('legendRow')).slice(7)
+  assert.deepEqual(statsRows.map(n => n.props.children[1].props.children), [
+    usageZh.bucketSystemPrompt, usageZh.bucketUser, usageZh.bucketSkill, usageZh.bucketToolResult,
+    usageZh.bucketToolDef, usageZh.bucketInjected, usageZh.bucketAssistant, usageZh.bucketOutput,
+  ])
+  assert.ok(statsRows.some(n => textOf(n).includes('20.1%')), 'the reference card share')
+  assert.ok(statsRows.some(n => textOf(n).includes(usageZh.statsIncludesThinking)), 'output says it includes thinking')
+})
+
+test('the cards degrade one at a time and hide themselves when both are empty', () => {
+  // An older host payload can carry the window without the spend composition.
+  let all = nodes(cardsHarness({ ...fixture, context: contextFixture, composition: null })())
+  assert.equal(all.filter(n => n.type === 'section').length, 2, 'the left card still renders')
+  assert.ok(all.some(n => classes(n).includes('empty') && n.props.children === usageZh.statsEmpty), 'the right card explains the gap')
+  // And a log can hold spend without a replayable window.
+  all = nodes(cardsHarness({ ...fixture, context: null, composition: compositionFixture })())
+  assert.equal(all.filter(n => n.type === 'section').length, 1, 'only the spend card renders')
+  assert.equal(cardsHarness({ ...fixture, context: null, composition: null })(), null, 'no data, no cards')
+})
+
+test('the live cards sit between the detail tables and the request records', () => {
   const without = nodes(viewHarness()())
-  assert.ok(!without.some(n => n.props?.['data-context-window'] === true), 'no snapshot, no panel')
-  const withContext = nodes(viewHarness({ ...fixture, context: contextFixture })())
-  const panel = withContext.find(n => n.props?.['data-context-window'] === true)
-  assert.ok(panel, 'the panel appears when the host sent a snapshot')
-  assert.equal(panel.props['data-items'], panelItems.length)
-  // The read timestamp rides along so the panel can stamp its own refresh.
-  assert.equal(panel.props['data-updated-at'], 1_730_000_000_000)
+  assert.ok(!without.some(n => n.props?.['data-usage-cards'] === true), 'no snapshot and no composition, no cards')
+  const withContext = nodes(viewHarness({ ...fixture, context: contextFixture, composition: compositionFixture })())
+  const cards = withContext.find(n => n.props?.['data-usage-cards'] === true)
+  assert.ok(cards, 'the cards appear when the host sent a snapshot')
+  assert.equal(cards.props['data-items'], panelItems.length)
   // Document order: the scope note and cards, then the subagent/model tables,
-  // then the context window, then the per-turn request records.
-  const at = withContext.indexOf(panel)
-  assert.ok(at > withContext.findIndex(n => n.props?.className === 'mid'), 'the panel follows the subagent/model tables')
-  assert.ok(at < withContext.findIndex(n => n.props?.className === 'turnList'), 'the panel precedes the request records')
+  // then the live cards, then the per-turn request records.
+  const at = withContext.indexOf(cards)
+  assert.ok(at > withContext.findIndex(n => n.props?.className === 'mid'), 'the cards follow the subagent/model tables')
+  assert.ok(at < withContext.findIndex(n => n.props?.className === 'turnList'), 'the cards precede the request records')
 })
 
 test('the context-window panel reads the used total, the window and the prompt-cache split', () => {

@@ -5,7 +5,7 @@ import { billedTotal, cacheHitPercentOf } from './session-usage-core.ts'
 import { formatCompact, formatTokens, normalizeModelName, decodeRateOf } from './format.ts'
 import { SESSION_USAGE_NS, type SessionUsageKey } from './session-usage-locales.ts'
 import { useSessionDetail } from './use-session-detail.ts'
-import { ContextWindowPanel } from './ContextWindowPanel.tsx'
+import { SessionUsageCards } from './UsageCards.tsx'
 import { ModelLogo } from './ModelLogo.tsx'
 import css from './SessionUsageView.module.css'
 
@@ -206,11 +206,11 @@ function Records({ detail, t }: { detail: SessionUsageDetail; t: T }): JSX.Eleme
 export function SessionUsageContent({ detail, t, updatedAt }: { detail: SessionUsageDetail; t: T; updatedAt?: number | null }): JSX.Element {
   return <>
     <p className={css.scope}>{t('scope')}</p><Metrics detail={detail} t={t} /><Tables detail={detail} t={t} />
-    {/* The context window sits between the per-subagent/model tables and the
-        request records: it describes what the next request carries right now,
-        while everything above is spent-token history and everything below is
-        per-turn detail. */}
-    {detail.context ? <ContextWindowPanel context={detail.context} t={t} updatedAt={updatedAt} /> : null}
+    {/* The two live cards sit between the per-subagent/model tables and the
+        request records: the left one describes what the next request carries
+        right now, the right one what the whole session spent, while everything
+        above is spent-token history and everything below is per-turn detail. */}
+    <SessionUsageCards detail={detail} t={t} />
     <Records key={detail.sessionId} detail={detail} t={t} /><p className={css.note}>{t('note')}</p>
   </>
 }

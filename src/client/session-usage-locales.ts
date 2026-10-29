@@ -16,7 +16,7 @@ export const usageZh = {
   answering: '正在回答...', firstWait: '首字耗时', sec: '秒', tokenWord: 'token', perSec: 'token/秒',
   cacheShort: '缓存', avgCache: '平均缓存', avgRate: '平均速率', inProgress: '个进行中',
   live: '实时更新', asOf: '统计截至', refresh: '刷新',
-  contextTitle: '上下文窗口', contextUsed: '已用上下文', contextLive: '实时',
+  contextTitle: '上下文窗口', currentContextTitle: '当前上下文', contextUsed: '已用上下文', contextLive: '实时',
   contextWindowKnown: '模型窗口 {value} · 已用 {percent}%', contextWindowUnknown: '模型的窗口大小未知',
   contextDigest: '{used} / {window} · {percent}%', contextDigestUnknown: '{used} / 窗口未知',
   contextFree: '空闲',
@@ -30,6 +30,14 @@ export const usageZh = {
   contextKindRest: '另外 {count} 项', contextTimes: '×{count}',
   contextEmpty: '本会话还没有可统计的上下文', contextTipShare: '占上下文 {percent}', contextTipWindow: '占窗口 {percent}',
   contextEstimateNote: '色块按历史重放估算 {estimate}；供应商实测提示词 {billed}（上游已压缩或裁剪）',
+  // ── The two cards that replaced the context-window panel ──────────────────
+  statsTitle: 'Token 统计', statsTotal: '总用量', statsCacheHit: '缓存命中',
+  statsIncludesThinking: '含思考', statsEmpty: '本会话还没有可统计的 token',
+  contextWindowTotal: '{used} / {window} tokens', contextWindowTotalUnknown: '{used} tokens',
+  contextUsedShort: '上下文已用',
+  bucketSystemPrompt: '系统提示词', bucketUser: '用户消息', bucketSkill: '技能注入',
+  bucketToolResult: '工具结果', bucketToolDef: '工具定义', bucketInjected: '注入内容',
+  bucketAssistant: '助手消息', bucketOutput: '输出',
 }
 export type SessionUsageKey = keyof typeof usageZh
 export const usageEn: Record<SessionUsageKey, string> = {
@@ -48,7 +56,7 @@ export const usageEn: Record<SessionUsageKey, string> = {
   answering: 'answering...', firstWait: 'first token', sec: 's', tokenWord: 'token', perSec: 'token/s',
   cacheShort: 'cache', avgCache: 'avg cache', avgRate: 'avg rate', inProgress: 'in progress',
   live: 'Live', asOf: 'as of', refresh: 'Refresh',
-  contextTitle: 'Context window', contextUsed: 'Context used', contextLive: 'Live',
+  contextTitle: 'Context window', currentContextTitle: 'Current context', contextUsed: 'Context used', contextLive: 'Live',
   contextWindowKnown: 'Window {value} · {percent}% used', contextWindowUnknown: 'Model window size unknown',
   contextDigest: '{used} / {window} · {percent}%', contextDigestUnknown: '{used} / window unknown',
   contextFree: 'free',
@@ -62,6 +70,14 @@ export const usageEn: Record<SessionUsageKey, string> = {
   contextKindRest: '{count} more', contextTimes: '×{count}',
   contextEmpty: 'Nothing in this session’s context yet', contextTipShare: '{percent} of context', contextTipWindow: '{percent} of window',
   contextEstimateNote: 'Blocks estimate {estimate} by replay; the provider billed {billed} after upstream compression',
+  // ── The two cards that replaced the context-window panel ──────────────────
+  statsTitle: 'Token stats', statsTotal: 'Total usage', statsCacheHit: 'Cache hit',
+  statsIncludesThinking: 'incl. thinking', statsEmpty: 'No token spend recorded for this session yet',
+  contextWindowTotal: '{used} / {window} tokens', contextWindowTotalUnknown: '{used} tokens',
+  contextUsedShort: 'context used',
+  bucketSystemPrompt: 'System prompt', bucketUser: 'User messages', bucketSkill: 'Skill injection',
+  bucketToolResult: 'Tool results', bucketToolDef: 'Tool definitions', bucketInjected: 'Injected content',
+  bucketAssistant: 'Assistant messages', bucketOutput: 'Output',
 }
 export const usageZhTW: Record<SessionUsageKey, string> = {
   ...usageZh,
@@ -78,7 +94,7 @@ export const usageZhTW: Record<SessionUsageKey, string> = {
   answering: '正在回答...', firstWait: '首字耗時', sec: '秒', tokenWord: 'token', perSec: 'token/秒',
   cacheShort: '快取', avgCache: '平均快取', avgRate: '平均速率', inProgress: '個進行中',
   live: '即時更新', asOf: '統計截至', refresh: '重新整理',
-  contextTitle: '上下文視窗', contextUsed: '已用上下文', contextLive: '即時',
+  contextTitle: '上下文視窗', currentContextTitle: '當前上下文', contextUsed: '已用上下文', contextLive: '即時',
   contextWindowKnown: '模型視窗 {value} · 已用 {percent}%', contextWindowUnknown: '模型的視窗大小未知',
   contextDigest: '{used} / {window} · {percent}%', contextDigestUnknown: '{used} / 視窗未知',
   contextFree: '空閒',
@@ -92,4 +108,12 @@ export const usageZhTW: Record<SessionUsageKey, string> = {
   contextKindRest: '另外 {count} 項', contextTimes: '×{count}',
   contextEmpty: '本會話還沒有可統計的上下文', contextTipShare: '佔上下文 {percent}', contextTipWindow: '佔視窗 {percent}',
   contextEstimateNote: '色塊按歷史重放估算 {estimate}；供應商實測提示詞 {billed}（上游已壓縮或裁剪）',
+  // ── The two cards that replaced the context-window panel ──────────────────
+  statsTitle: 'Token 統計', statsTotal: '總用量', statsCacheHit: '快取命中',
+  statsIncludesThinking: '含思考', statsEmpty: '本會話還沒有可統計的 token',
+  contextWindowTotal: '{used} / {window} tokens', contextWindowTotalUnknown: '{used} tokens',
+  contextUsedShort: '上下文已用',
+  bucketSystemPrompt: '系統提示詞', bucketUser: '使用者訊息', bucketSkill: '技能注入',
+  bucketToolResult: '工具結果', bucketToolDef: '工具定義', bucketInjected: '注入內容',
+  bucketAssistant: '助手訊息', bucketOutput: '輸出',
 }

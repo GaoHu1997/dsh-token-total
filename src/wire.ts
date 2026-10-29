@@ -198,6 +198,43 @@ export interface SessionUsageDetail {
   /** The root session's live context composition, rendered above the cards.
    *  Null when the log has no readable events (or on an older host). */
   context?: SessionContextWindow | null
+  /** What the session's requests spent, split by what filled the prompt.
+   *  Null when the log has no readable usage (or on an older host). */
+  composition?: SessionUsageComposition | null
+}
+
+/** The eight buckets the Token stats card names, in legend order: the left
+ *  column first (prompt composition), then the right column. */
+export type SessionUsageBucket =
+  | 'systemPrompt'
+  | 'user'
+  | 'skill'
+  | 'toolResult'
+  | 'toolDef'
+  | 'injected'
+  | 'assistant'
+  | 'output'
+
+/** One session tree's spend split by prompt content.
+ *
+ *  Every provider request replays the whole message list, so a bucket's number
+ *  is what that bucket contributed ACROSS ALL REQUESTS, not its size in the
+ *  window today. The replay figures are ESTIMATES (character counts, the same
+ *  estimator the context-window snapshot uses) because the provider only bills
+ *  a whole prompt; the billed total and its cache split are exact and drive
+ *  the headline and the cache-hit badge. */
+export interface SessionUsageComposition {
+  /** Estimated replay tokens per bucket, in legend order (kept at 0 when a
+   *  bucket never appeared so the card can keep a stable order). */
+  buckets: Array<{ key: SessionUsageBucket; tokens: number }>
+  /** Exact provider-billed total across the same requests (prompt including
+   *  cached tokens, plus output). */
+  billedTokens: number
+  /** The same spend split into the four billing buckets, for the cache badge
+   *  and any future detail row. */
+  totals: SessionUsageTotals
+  /** How many provider answers the accumulation covers (compaction included). */
+  requests: number
 }
 
 /** The six buckets the context-window panel paints, in legend order. They are

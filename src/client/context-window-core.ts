@@ -4,6 +4,8 @@
  * separate from the component so both are testable without a DOM.
  */
 import type { SessionContextCategory, SessionContextItem, SessionContextWindow } from '../wire.ts'
+import type { SessionUsageBucket } from '../wire.ts'
+import { CONTEXT_BUCKET_ORDER } from '../usage-buckets.ts'
 
 /** Legend order, also the color assignment order (see the CSS module). */
 export const CONTEXT_CATEGORY_ORDER: readonly SessionContextCategory[] = [
@@ -28,6 +30,43 @@ export function contextCategoryTotals(
   return CONTEXT_CATEGORY_ORDER
     .map(key => ({ key, tokens: totals.get(key) ?? 0 }))
     .filter(row => row.tokens > 0)
+}
+
+/** Which legend bucket one window row belongs to.
+ *
+ *  The row categories are the treemap's (they group files separately); the
+ *  cards speak the eight-bucket legend instead. A folded `rest` row lost its
+ *  kind, so a conversation tail lands with the assistant — the larger half of
+ *  what a turn replays.
+ */
+function contextBucketOf(item: SessionContextItem): SessionUsageBucket {
+  switch (item.category) {
+    case 'system': return 'systemPrompt'
+    case 'tools': return 'toolDef'
+    case 'memory': return item.kind === 'skill-catalog' ? 'skill' : 'injected'
+    case 'files':
+    case 'results': return 'toolResult'
+    case 'conversation': return item.kind === 'user' ? 'user' : 'assistant'
+    default: return 'injected'
+  }
+}
+
+/** The live window folded into the same legend the spend card prints, in
+ *  legend order and keeping zero buckets so both cards stay aligned. */
+export function contextBucketTotals(
+  items: readonly SessionContextItem[],
+): Array<{ key: SessionUsageBucket; tokens: number }> {
+  const totals = new Map<SessionUsageBucket, number>()
+  for (const item of items) {
+    const key = contextBucketOf(item)
+    totals.set(key, (totals.get(key) ?? 0) + item.tokens)
+  }
+  return CONTEXT_BUCKET_ORDER.map(key => ({ key, tokens: totals.get(key) ?? 0 }))
+}
+
+/** What a share of the whole is, for the legend column. */
+export function bucketPercent(tokens: number, total: number): number {
+  return total > 0 ? (tokens / total) * 100 : 0
 }
 
 /** Window occupancy in whole percent, or null when the host never reported the
