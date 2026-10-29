@@ -145,14 +145,18 @@ test('streaming sampler publishes measured growth and a new step starts without 
   assert.equal(quick.ratePerSecond(), 100)
 })
 
-test('the live speed slot holds its last measured figure across a settle', () => {
-  // The official session average is a figure from the whole session's past; it
-  // must not replace the current speed the moment a step settles (tool
-  // execution is most of a tool-heavy answer). The slot keeps its reading in
-  // state, and only a session that never streamed shows the official figure.
-  assert.match(pillSource, /const \[reading, setReading\] = useState<number \| null>\(null\)/)
+test('the live speed slot falls back to the session average once no step streams', () => {
+  // A settled turn used to keep showing the last second-long window reading
+  // (57 tok/s) beside the usage view's session average (156 tok/s) for the same
+  // work, and the two read as a contradiction. The reading now carries the step
+  // it was taken in, so with no step streaming no tag matches and the slot shows
+  // the average instead of freezing on a window nobody is watching.
+  assert.match(pillSource, /useState<\{ key: string; value: number \} \| null>\(null\)/)
   assert.match(pillSource, /if \(next !== null\) \{\s*setReading\(previous/)
-  assert.doesNotMatch(pillSource, /published\.key === key/)
+  assert.match(pillSource, /const measured = reading !== null && reading\.key === key \? reading\.value : null/)
+  assert.match(pillSource, /if \(key === null\) return/)
+  // Nothing may be held across the gap: the gap is exactly when the average applies.
+  assert.doesNotMatch(pillSource, /held across step boundaries/)
 })
 
 test('both composer layouts have no preference gates; panel has no enhancement or rebuild switches', async () => {
