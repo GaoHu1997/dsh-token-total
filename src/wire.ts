@@ -114,6 +114,22 @@ export interface SessionUsageTotals {
   cacheWriteTokens: number
 }
 
+/** A descendant that could not be read. Reasons are stable and sanitized;
+ * exception messages and filesystem paths never cross the wire. */
+export interface SessionUsageReadIssue {
+  sessionId: string
+  reason: 'corrupt' | 'missing' | 'unavailable'
+}
+
+/** A partial response is usable, but its totals are explicitly not the whole
+ * tree. The root is always readable; older hosts may omit this field. */
+export interface SessionUsageCoverage {
+  complete: boolean
+  totalSessions: number
+  readableSessions: number
+  unreadableSessions: SessionUsageReadIssue[]
+}
+
 /** What one session tree cost, split into the main agent and its subagents.
  *  The composer stats row renders this so a delegating session shows its whole
  *  spend (the native `tokenUsage` projection only covers the main agent). */
@@ -129,6 +145,7 @@ export interface SessionUsageTree {
   total: SessionUsageTotals
   /** How many descendant sessions were counted. */
   subagentSessions: number
+  coverage?: SessionUsageCoverage
 }
 
 /** Request body of POST /token-total/api/session. */
@@ -139,6 +156,7 @@ export interface SessionUsageRequest {
 /** Detailed per-session usage view used by the Usage tab. */
 export interface SessionUsageDetail {
   sessionId: string
+  coverage?: SessionUsageCoverage
   totals: SessionUsageTotals
   requests: number
   averageFirstTokenMs: number | null

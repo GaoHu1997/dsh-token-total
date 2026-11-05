@@ -205,7 +205,12 @@ function Records({ detail, t }: { detail: SessionUsageDetail; t: T }): JSX.Eleme
 /** Pure presentation export also used by offline visual regression fixtures. */
 export function SessionUsageContent({ detail, t, updatedAt }: { detail: SessionUsageDetail; t: T; updatedAt?: number | null }): JSX.Element {
   return <>
-    <p className={css.scope}>{t('scope')}</p><Metrics detail={detail} t={t} /><Tables detail={detail} t={t} />
+    <p className={css.scope}>{t('scope')}</p>
+    {detail.coverage?.complete === false && <div className={css.error} role="status" data-session-usage-partial>
+      {t('partialCoverage', { count: String(detail.coverage.unreadableSessions.length) })}
+      <span title={detail.coverage.unreadableSessions.map(issue => issue.sessionId).join('\n')}>{t('partialTotals')}</span>
+    </div>}
+    <Metrics detail={detail} t={t} /><Tables detail={detail} t={t} />
     {/* The two live cards sit between the per-subagent/model tables and the
         request records: the left one describes what the next request carries
         right now, the right one what the whole session spent, while everything

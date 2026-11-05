@@ -405,7 +405,8 @@ function UsagePill({ usage, tree, t, dialog, dock }: {
   const billed = display.total
   // Same aggregate as the official pill total: every prompt-side billing bucket plus output.
   const total = billedTotal(billed)
-  const totalText = t('message.turnUsage.count', { count: formatTokensCompact(total) })
+  const incomplete = display.coverage?.complete === false
+  const totalText = (incomplete ? '≥ ' : '') + t('message.turnUsage.count', { count: formatTokensCompact(total) })
   // Native formatting, one consistent scope: the ratio comes from the same
   // aggregate the headline uses, so "33M tok · 87%" can never contradict the
   // number printed beside it. The integer shape and its >99% guard are the
@@ -421,7 +422,8 @@ function UsagePill({ usage, tree, t, dialog, dock }: {
         className={css.pill}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={cacheHitText === null ? totalText : totalText + ' · ' + cacheHitText}
+        aria-label={(incomplete ? t('stats.partial') + ' · ' : '') + (cacheHitText === null ? totalText : totalText + ' · ' + cacheHitText)}
+        title={incomplete ? t('stats.incomplete', { count: display.coverage!.unreadableSessions.length }) : undefined}
         onClick={() => { setOpen(!open) }}
       >
         <DatabaseIcon />
@@ -451,9 +453,14 @@ function UsagePill({ usage, tree, t, dialog, dock }: {
               <DatabaseIcon />
               {t('stats.dialog.usageTitle')}
             </span>
-            <span className={css.dialogTitleValue}>{exactCount(total)}</span>
+            <span className={css.dialogTitleValue}>{(incomplete ? '≥ ' : '') + exactCount(total)}</span>
           </div>
           <div className={css.dialogTitleRule} aria-hidden />
+          {incomplete && (
+            <p role="status" data-session-usage-partial>
+              {t('stats.incomplete', { count: display.coverage!.unreadableSessions.length })}
+            </p>
+          )}
           {/* Exactly the official dialog's rows, in the official order: the
               takeover adds the tree to the TOTAL, not to the breakdown. */}
           <dl className={css.dialogDetails} data-session-stats-usage>
@@ -509,7 +516,8 @@ export const StatsLineEnhanced = memo(function StatsLineEnhanced(
   // Refresh on main-agent settlements and poll for child-only activity.
   const tree = useSessionUsage(sessionId, usageSignature(usage, stats.steps))
   // A delegated-only session must still show its usage pill.
-  const hasTokens = hasAnyTokens(sessionUsageForDisplay(usage, tree.tree).total)
+  const display = sessionUsageForDisplay(usage, tree.tree)
+  const hasTokens = hasAnyTokens(display.total) || display.coverage?.complete === false
   if (stats.steps === 0 && !hasTokens) return null
   // data-composer-stats: through host 0.1.6-alpha.1 InputBar tightened the
   // composer bottom clearance while this row rendered (the official pills'
@@ -582,7 +590,8 @@ export const StatsUsageEntry = memo(function StatsUsageEntry(
 ) {
   const usage = useProjection('tokenUsage')
   const tree = useSessionUsage(sessionId, usageSignature(usage, usage === undefined ? 0 : 1))
-  const hasTokens = hasAnyTokens(sessionUsageForDisplay(usage, tree.tree).total)
+  const display = sessionUsageForDisplay(usage, tree.tree)
+  const hasTokens = hasAnyTokens(display.total) || display.coverage?.complete === false
   if (!hasTokens) return null
   return (
     <UsagePill

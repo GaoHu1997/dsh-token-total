@@ -1,12 +1,5 @@
-import type {
-  Context,
-  UsageSessionEvent,
-  UsageSessionHandle,
-  UsageSessionHeader,
-  UsageSessionPersistence,
-  UsageSessionSnapshot,
-  UsageSessionStore,
-} from './context-types.ts'
+import type { Context, UsageSessionHeader, UsageSessionPersistence, UsageSessionStore } from './context-types.ts'
+import { readUsageTree, type UsageSessionLog } from './session-tree.ts'
 import { UsageFold } from './collector.ts'
 import { buildSessionContextWindow } from './context-window.ts'
 import { buildSessionUsageComposition, mergeUsageCompositions } from './usage-composition.ts'
@@ -83,22 +76,6 @@ function usageOutputTokens(x: any): number | null {
   const value = (x?.usage ?? x)?.outputTokens
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
 }
-function headerOf(item: UsageSessionHeader | UsageSessionSnapshot): UsageSessionHeader | null {
-  const x: any = item
-  if (x?.header?.id && typeof x.header.id === 'string') return x.header
-  return typeof x?.id === 'string' && x.id ? x : null
-}
-async function read(p: UsageSessionPersistence, id: string, live?: UsageSessionHandle): Promise<{ events: readonly UsageSessionEvent[]; cut: number }> {
-  if (live?.snapshotEvents && typeof live.inheritedEventCount === 'number') return { events: live.snapshotEvents(), cut: Math.max(0, live.inheritedEventCount) }
-  if (p.open) {
-    const h = await p.open(id, 'read'); const out: UsageSessionEvent[] = []
-    try { for (let off = 0;;) { const page = await h.read(off, 500); if (!page.events.length) break; out.push(...page.events); off += page.events.length } }
-    finally { await h.close().catch(() => {}) }
-    return { events: out, cut: Math.max(0, Number(h.inheritedEventCount) || 0) }
-  }
-  if (p.inspect) { const x = await p.inspect(id); return { events: x.events, cut: Math.max(0, Number(x.inheritedEventCount) || 0) } }
-  throw new Error('no readable persistence seam (need open or inspect)')
-}
 
 type MutableRecord = SessionUsageDetail['records'][number] & { _attempt: number; _lastUsage: SessionUsageTotals }
 function nameOf(h: UsageSessionHeader | undefined, id: string): string {
@@ -109,8 +86,8 @@ function nameOf(h: UsageSessionHeader | undefined, id: string): string {
   return id
 }
 
-async function one(p: UsageSessionPersistence, id: string, header: UsageSessionHeader | undefined, live: UsageSessionHandle | undefined) {
-  const { events, cut } = await read(p, id, live)
+function one(log: UsageSessionLog) {
+  const { id, header, live, events, inheritedCut: cut } = log
   const fold = new UsageFold(); const totals = zero(); const records: MutableRecord[] = []
   const byKey = new Map<string, MutableRecord>(); let route = live?.requestContext?.() ?? {}
   let ordinal = 0
@@ -214,14 +191,8 @@ async function one(p: UsageSessionPersistence, id: string, header: UsageSessionH
 }
 
 export async function buildSessionUsageDetail(persistence: UsageSessionPersistence, sessions: UsageSessionStore | undefined, rootId: string, ctx?: Context): Promise<SessionUsageDetail> {
-  const raw = await persistence.list(typeof persistence.open === 'function' ? undefined : undefined)
-  const headers = raw.map(headerOf).filter((x): x is UsageSessionHeader => x !== null)
-  const live = new Map((sessions?.list() ?? []).map(x => [x.id, x])); const children = new Map<string, string[]>()
-  for (const h of headers) if (h.parentSession) children.set(h.parentSession, [...(children.get(h.parentSession) ?? []), h.id])
-  for (const h of live.values()) { const p = h.header?.parentSession ?? h.parentSession; if (p) children.set(p, [...(children.get(p) ?? []).filter(x => x !== h.id), h.id]) }
-  const ids: string[] = []; const seen = new Set([rootId]); const q = [rootId]
-  while (q.length) for (const c of children.get(q.shift()!) ?? []) if (!seen.has(c)) { seen.add(c); ids.push(c); q.push(c) }
-  const all = [rootId, ...ids]; const parts = await Promise.all(all.map(id => one(persistence, id, headers.find(h => h.id === id), live.get(id))))
+  const { root, descendants, coverage } = await readUsageTree(persistence, sessions, rootId)
+  const parts = [root, ...descendants].map(one)
   const totals = zero(); const models = new Map<string, { totals: SessionUsageTotals; requests: number; providers: Set<string> }>(); const records = parts.flatMap(x => x.records); for (const p of parts) add(totals, p.totals)
   for (const r of records) { const key = r.model || '(unknown)'; const m = models.get(key) ?? { totals: zero(), requests: 0, providers: new Set<string>() }; add(m.totals, r.totals); m.requests++; if (r.provider) m.providers.add(r.provider); models.set(key, m) }
   const subagents = parts.slice(1).map(p => ({ sessionId: p.id, name: p.name, totals: p.totals, requests: p.requests, averageFirstTokenMs: p.averageFirstTokenMs, tokensPerSecond: p.tokensPerSecond }))
@@ -248,5 +219,5 @@ export async function buildSessionUsageDetail(persistence: UsageSessionPersisten
   // The card is scoped to this session and every subagent, so its speed and
   // first-token average fold the same records its token totals do.
   const firsts = records.filter(x => x.status === 'completed').map(x => x.firstTokenMs).filter((x): x is number => x !== null)
-  return { sessionId: rootId, totals, requests: parts.reduce((n, p) => n + p.requests, 0), averageFirstTokenMs: firsts.length ? firsts.reduce((a, b) => a + b, 0) / firsts.length : null, tokensPerSecond: decodeRateOf(records), subagents, models: [...models.entries()].map(([model, x]) => { const name = displayNameOf(model, x.providers); return { model, ...(name ? { name } : {}), providers: [...x.providers].map(provider => providerNames[provider] || provider), totals: x.totals, requests: x.requests } }), records, routes: [...routeMap.values()], context: parts[0]?.context ?? null, composition: mergeUsageCompositions(parts.map(p => p.composition)) }
+  return { sessionId: rootId, coverage, totals, requests: parts.reduce((n, p) => n + p.requests, 0), averageFirstTokenMs: firsts.length ? firsts.reduce((a, b) => a + b, 0) / firsts.length : null, tokensPerSecond: decodeRateOf(records), subagents, models: [...models.entries()].map(([model, x]) => { const name = displayNameOf(model, x.providers); return { model, ...(name ? { name } : {}), providers: [...x.providers].map(provider => providerNames[provider] || provider), totals: x.totals, requests: x.requests } }), records, routes: [...routeMap.values()], context: parts[0]?.context ?? null, composition: mergeUsageCompositions(parts.map(p => p.composition)) }
 }

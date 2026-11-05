@@ -159,7 +159,7 @@ function viewHarness(override) {
     assert.fail(name)
   }
   runInContext(viewCode, sandbox)
-  return () => { cursor = 0; return sandbox.exports.SessionUsageContent({ detail, t: key => usageZh[key], updatedAt: 1_730_000_000_000 }) }
+  return () => { cursor = 0; return sandbox.exports.SessionUsageContent({ detail, t: (key, params) => String(usageZh[key]).replace(/\{(\w+)\}/g, (_, name) => params?.[name] ?? ''), updatedAt: 1_730_000_000_000 }) }
 }
 function nodes(root) {
   if (root == null || typeof root !== 'object') return []
@@ -254,6 +254,21 @@ test('By-model card labels rows with model display names and gray providers on n
     const logo = nodes(cell).find(c => c.type === 'svg')
     assert.equal(logo.props['data-name'], name, `logo matcher receives the display name for ${model}`)
   }
+})
+
+test('partial coverage keeps readable totals visible and identifies omitted descendants', () => {
+  const coverage = { complete: false, totalSessions: 4, readableSessions: 2, unreadableSessions: [
+    { sessionId: 'bad-cli-one', reason: 'corrupt' }, { sessionId: 'bad-cli-two', reason: 'missing' },
+  ] }
+  const partial = nodes(viewHarness({ ...fixture, coverage })())
+  const status = partial.find(node => node.props?.['data-session-usage-partial'] !== undefined)
+  assert.ok(status)
+  assert.equal(status.props.role, 'status')
+  assert.ok(JSON.stringify(status).includes('2'))
+  assert.ok(nodes(status).some(node => node.props?.title === 'bad-cli-one\nbad-cli-two'))
+  assert.ok(partial.some(node => node.props?.className === 'statValue'), 'readable metrics remain available')
+  const restored = nodes(viewHarness({ ...fixture, coverage: { ...coverage, complete: true, readableSessions: 4, unreadableSessions: [] } })())
+  assert.ok(!restored.some(node => node.props?.['data-session-usage-partial'] !== undefined))
 })
 
 // ── context-window panel ──────────────────────────────────────────────────

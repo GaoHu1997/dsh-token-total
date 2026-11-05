@@ -35,6 +35,7 @@ export function sessionUsageForDisplay(
     subagents,
     total: tree === null ? self : combinedTotals(tree, self),
     subagentSessions: tree?.subagentSessions ?? 0,
+    ...(tree?.coverage ? { coverage: tree.coverage } : {}),
   }
 }
 

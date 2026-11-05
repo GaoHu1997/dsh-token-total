@@ -15,7 +15,7 @@ const compiled = ts.transpileModule(pillSource + '\nexport { UsagePill, TimePill
 
 // Exercise the actual shared pills without a browser. A retired preference
 // must never be read, even if a previous installation explicitly disabled it.
-const loadPills = (saved) => {
+const loadPills = (saved, treeValue = null) => {
   const element = (type, props) => ({ type, props })
   const react = {
     memo: component => component,
@@ -42,7 +42,7 @@ const loadPills = (saved) => {
     }
     if (name === './session-usage-core.ts') return sessionCore
     if (name === './use-session-usage.ts') return {
-      useSessionUsage: () => ({ tree: null, totals: null }),
+      useSessionUsage: () => ({ tree: treeValue, totals: treeValue?.total ?? null }),
     }
     if (name.endsWith('.module.css')) return new Proxy({}, { get: (_, key) => key })
     assert.fail(`unexpected runtime dependency: ${name}`)
@@ -116,6 +116,26 @@ test('usage pill and every dialog bucket share authoritative tree totals in both
     assert.equal(nodes.findIndex(node => node.props.children === 'stats.dialog.main'), -1)
     assert.equal(nodes.findIndex(node => node.props.children === 'stats.dialog.treeTotal'), -1)
   }
+})
+
+test('partial usage is labelled in the button and dialog, including zero-token sessions in both layouts', () => {
+  const zero = { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
+  const coverage = { complete: false, totalSessions: 2, readableSessions: 1, unreadableSessions: [{ sessionId: 'bad-cli', reason: 'corrupt' }] }
+  const partial = { self: zero, subagents: zero, total: zero, subagentSessions: 0, coverage }
+  const pills = loadPills({}, partial)
+  for (const dock of [false, true]) {
+    const nodes = flatten(pills.UsagePill({ usage: zero, tree: { tree: partial }, t, dock }))
+    const button = nodes.find(node => node.type === 'button')
+    assert.ok(button.props['aria-label'].startsWith('stats.partial · ≥ '))
+    assert.equal(button.props.title, 'stats.incomplete:{"count":1}')
+    const status = nodes.find(node => node.props?.['data-session-usage-partial'] !== undefined)
+    assert.equal(status.props.role, 'status')
+    assert.equal(status.props.children, 'stats.incomplete:{"count":1}')
+    assert.ok(nodes.some(node => node.props?.children === '≥ message.turnUsage.count:{"count":"0"}'))
+  }
+  const useProjection = key => key === 'tokenUsage' ? zero : { steps: 0 }
+  assert.ok(pills.StatsUsageEntry({ useProjection, t, sessionId: 'root' }))
+  assert.ok(pills.StatsLineEnhanced({ useProjection, useChat: read => read({ legacy: { nodes: [] } }), t, sessionId: 'root' }))
 })
 
 test('cache precision always formats two decimals including full hits', () => {

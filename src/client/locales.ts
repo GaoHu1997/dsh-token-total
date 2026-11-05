@@ -82,6 +82,8 @@ export type TokenTotalKey =
   | 'stats.cacheMiss'
   | 'stats.dialog.title'
   | 'stats.dialog.usageTitle'
+  | 'stats.partial'
+  | 'stats.incomplete'
   | 'stats.dialog.llmTime'
   | 'stats.dialog.toolTime'
   | 'stats.dialog.ttft'
@@ -170,6 +172,8 @@ export const en: Record<TokenTotalKey, string> = {
   'stats.cacheMiss': 'Cache miss',
   'stats.dialog.title': 'Time & speed',
   'stats.dialog.usageTitle': 'Token usage',
+  'stats.partial': 'Partial usage',
+  'stats.incomplete': '{count} subagent session(s) could not be read; totals are incomplete.',
   'stats.dialog.llmTime': 'LLM time',
   'stats.dialog.toolTime': 'Tool time',
   'stats.dialog.ttft': 'Mean TTFT',
@@ -259,6 +263,8 @@ export const zh: Record<TokenTotalKey, string> = {
   'stats.cacheMiss': '未命中缓存',
   'stats.dialog.title': '用时与速度',
   'stats.dialog.usageTitle': 'Token 用量',
+  'stats.partial': '部分用量',
+  'stats.incomplete': '有 {count} 个子会话暂不可读取，总计尚不完整。',
   'stats.dialog.llmTime': 'LLM 用时',
   'stats.dialog.toolTime': '工具用时',
   'stats.dialog.ttft': '首 token 平均',
@@ -348,6 +354,8 @@ export const zhTW: Record<TokenTotalKey, string> = {
   'stats.cacheMiss': '未命中快取',
   'stats.dialog.title': '用時與速度',
   'stats.dialog.usageTitle': 'Token 用量',
+  'stats.partial': '部分用量',
+  'stats.incomplete': '有 {count} 個子會話暫不可讀取，總計尚不完整。',
   'stats.dialog.llmTime': 'LLM 用時',
   'stats.dialog.toolTime': '工具用時',
   'stats.dialog.ttft': '首 token 平均',

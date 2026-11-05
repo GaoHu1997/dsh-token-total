@@ -170,7 +170,11 @@ test('event during asynchronous read prevents stale result being cached', async 
 test('corrupt child does not become a cached partial success and can recover next request', async () => {
   const rows = [{ id: 'root' }, { id: 'child', parentSession: 'root' }], logs = { root: [message(0, 10)] }
   const service = new SessionUsageService(), persistence = legacy(rows, logs)
-  await assert.rejects(service.tree(persistence, undefined, 'root'), /missing child/)
+  const partial = await service.tree(persistence, undefined, 'root')
+  assert.equal(partial.total.uncachedInputTokens, 10)
+  assert.equal(partial.coverage.complete, false)
+  assert.equal(partial.coverage.readableSessions, 1)
+  assert.deepEqual(partial.coverage.unreadableSessions, [{ sessionId: 'child', reason: 'unavailable' }])
   logs.child = [message(0, 20)]
   assert.equal((await service.tree(persistence, undefined, 'root')).total.uncachedInputTokens, 30)
 })
