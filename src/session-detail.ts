@@ -86,8 +86,12 @@ function nameOf(h: UsageSessionHeader | undefined, id: string): string {
   return id
 }
 
-function one(log: UsageSessionLog) {
-  const { id, header, live, events, inheritedCut: cut } = log
+function ownEventsOf(log: UsageSessionLog) {
+  return log.events.filter(e => !(log.inheritedCut > 0 && typeof e.seq === 'number' && e.seq < log.inheritedCut))
+}
+
+function one(log: UsageSessionLog, parentCatalogLabel?: string) {
+  const { id, header, live } = log
   const fold = new UsageFold(); const totals = zero(); const records: MutableRecord[] = []
   const byKey = new Map<string, MutableRecord>(); let route = live?.requestContext?.() ?? {}
   let ordinal = 0
@@ -96,18 +100,16 @@ function one(log: UsageSessionLog) {
   // the prompt usually lands before `turn/start`, so buffer it until the turn opens.
   let currentTurn = 0; let effort = ''; let pendingTopic = ''
   const turnTopics = new Map<number, string>()
-  const own = events.filter(e => !(cut > 0 && typeof e.seq === 'number' && e.seq < cut))
-  // Real session names: a subagent carries its delegation label on its
-  // `subagent/descriptor` event ("完成日志明细后端"), every session can carry a
-  // generated `session/title`; only fall back to the header/cwd/id guesses.
+  const own = ownEventsOf(log)
+  // Prefer the child's own delegation label or latest title. Older CLI records
+  // carry their task name only in the actual parent's subagent/catalog.
   let label = '', title = ''
   for (const ev of own) {
     const d: any = ev.data ?? {}
     if (!label && ev.type === 'subagent/descriptor' && typeof d.label === 'string' && d.label.trim()) label = d.label.trim()
-    if (!title && ev.type === 'session/title' && typeof d.title === 'string' && d.title.trim()) title = d.title.trim()
-    if (label && title) break
+    if (ev.type === 'session/title' && typeof d.title === 'string' && d.title.trim()) title = d.title.trim()
   }
-  const name = label || title || nameOf(header, id)
+  const name = label || title || parentCatalogLabel || nameOf(header, id)
   // Decode accounting mirrors the official `sessionStats` projection: a step
   // records its first token once (the earliest attempt wins, surviving an
   // in-step retry), and only the assembled `assistant/message` closes the
@@ -192,7 +194,23 @@ function one(log: UsageSessionLog) {
 
 export async function buildSessionUsageDetail(persistence: UsageSessionPersistence, sessions: UsageSessionStore | undefined, rootId: string, ctx?: Context): Promise<SessionUsageDetail> {
   const { root, descendants, coverage } = await readUsageTree(persistence, sessions, rootId)
-  const parts = [root, ...descendants].map(one)
+  const logs = [root, ...descendants]
+  const catalogLabels = new Map<string, Map<string, string>>()
+  for (const log of logs) {
+    const labels = new Map<string, string>()
+    for (const event of ownEventsOf(log)) {
+      if (event.type !== 'subagent/catalog') continue
+      const data = event.data as { childId?: unknown; label?: unknown } | null
+      if (typeof data?.childId === 'string' && data.childId && typeof data.label === 'string' && data.label.trim()) {
+        labels.set(data.childId, data.label.trim())
+      }
+    }
+    catalogLabels.set(log.id, labels)
+  }
+  const parts = logs.map(log => {
+    const parentId = log.header?.parentSession ?? log.live?.header?.parentSession ?? log.live?.parentSession
+    return one(log, parentId === undefined ? undefined : catalogLabels.get(parentId)?.get(log.id))
+  })
   const totals = zero(); const models = new Map<string, { totals: SessionUsageTotals; requests: number; providers: Set<string> }>(); const records = parts.flatMap(x => x.records); for (const p of parts) add(totals, p.totals)
   for (const r of records) { const key = r.model || '(unknown)'; const m = models.get(key) ?? { totals: zero(), requests: 0, providers: new Set<string>() }; add(m.totals, r.totals); m.requests++; if (r.provider) m.providers.add(r.provider); models.set(key, m) }
   const subagents = parts.slice(1).map(p => ({ sessionId: p.id, name: p.name, totals: p.totals, requests: p.requests, averageFirstTokenMs: p.averageFirstTokenMs, tokensPerSecond: p.tokensPerSecond }))
