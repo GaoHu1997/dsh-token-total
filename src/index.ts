@@ -12,7 +12,7 @@
  * the browser half over the fenced route.
  */
 
-import type { Context, UsageWebRuntime, UsageWebStartup } from './context-types.ts'
+import type { Context, UsageSessionHandle, UsageWebRuntime, UsageWebStartup } from './context-types.ts'
 import type { TrustInputs } from './trust-fence.ts'
 import { UsageStore } from './store.ts'
 import { UsageCollector } from './collector.ts'
@@ -72,10 +72,11 @@ export function apply(ctx: Context, config: TokenTotalConfig = {}): void {
     source: config.source,
     backfillConcurrency: config.backfillConcurrency,
   })
-  // Per-session (main + subagent) usage for the composer stats row. Its cache
-  // is invalidated on every live event of the touched session (see the
-  // collector subscription below), so the pill never shows a stale tree.
-  const sessionUsage = new SessionUsageService()
+  // Committed events invalidate only the touched tree and its ancestors. With
+  // that hook, unchanged histories can stay cached longer; older hosts without
+  // it retain four-second catalog revalidation rather than stale live totals.
+  const sessionEvents = ctx as unknown as { on?: (name: string, fn: (s: Partial<UsageSessionHandle>) => void) => void }
+  const sessionUsage = new SessionUsageService(typeof sessionEvents.on === 'function' ? undefined : 4_000)
 
   // The /token-total/api trust inputs, resolved live so the fence reads the same sources
   // the /api gateway derives them from. DSH 0.2.1-alpha.2 moved the explicit
@@ -242,15 +243,17 @@ export function apply(ctx: Context, config: TokenTotalConfig = {}): void {
 
   ctx.effect(() => {
     collector.start()
-    // Keep the per-session tree cache honest: every committed event of any
-    // session (main or subagent) changes at least one cached tree, so drop the
-    // ones that counted it. Observational only — a missing hook is harmless.
-    const onEvent = (session: { id?: unknown }): void => {
+    // Include live ancestry: a new child may not be in the persisted catalog
+    // yet. Missing metadata takes the service's conservative fallback path.
+    const onEvent = (session: Partial<UsageSessionHandle>): void => {
       const id = typeof session?.id === 'string' ? session.id : ''
-      if (id !== '') sessionUsage.invalidate(id)
+      if (id === '') return
+      const owner = ctx.sessions.get?.(id) ?? session
+      const parent = owner.header?.parentSession ?? owner.parentSession
+      const knownParent = owner.header !== undefined || 'parentSession' in owner
+      sessionUsage.invalidate(id, knownParent ? parent ?? null : undefined)
     }
-    ;(ctx as unknown as { on?: (name: string, fn: (s: { id?: unknown }) => void) => void })
-      .on?.('session/event', onEvent)
+    sessionEvents.on?.('session/event', onEvent)
     void (async () => {
       await rescan()
       await ensureHourHistory()

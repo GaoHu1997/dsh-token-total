@@ -71,8 +71,8 @@ export async function rebuildStats(): Promise<BackfillStatus> {
  *  every subagent session delegated from it. The native `tokenUsage` projection
  *  covers only the main agent, so this is what makes a delegating session's
  *  cost visible. */
-export async function fetchSessionUsage(sessionId: string): Promise<SessionUsageTree> {
-  return post<SessionUsageTree>('session', { sessionId })
+export async function fetchSessionUsage(sessionId: string, signal?: AbortSignal): Promise<SessionUsageTree> {
+  return post<SessionUsageTree>('session', { sessionId }, signal)
 }
 
 /** Log-owned requests and live route states for the per-session Usage view. */

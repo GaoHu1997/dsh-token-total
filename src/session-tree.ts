@@ -18,6 +18,12 @@ export interface UsageSessionLog {
   inheritedCut: number
 }
 
+/** Metadata only: includes unreadable descendants and both persisted/live links. */
+export interface UsageTreeCatalog {
+  parents: ReadonlyMap<string, ReadonlySet<string>>
+  members: ReadonlySet<string>
+}
+
 function headerOf(item: UsageSessionHeader | UsageSessionSnapshot): UsageSessionHeader | null {
   if (!item || typeof item !== 'object') return null
   const header = 'header' in item ? item.header : item
@@ -84,6 +90,7 @@ export async function readUsageTree(
   sessions: UsageSessionStore | undefined,
   rootId: string,
   signal?: AbortSignal,
+  onCatalog?: (catalog: UsageTreeCatalog) => void,
 ): Promise<{ root: UsageSessionLog; descendants: UsageSessionLog[]; coverage: SessionUsageCoverage }> {
   signal?.throwIfAborted()
   const rows = await persistence.list(typeof persistence.open === 'function'
@@ -96,11 +103,14 @@ export async function readUsageTree(
   }
   const live = new Map((sessions?.list() ?? []).map(handle => [handle.id, handle]))
   const children = new Map<string, Set<string>>()
+  const parents = new Map<string, Set<string>>()
+  for (const id of [...headers.keys(), ...live.keys()]) parents.set(id, new Set())
   const link = (id: string, parent: unknown): void => {
     if (typeof parent !== 'string' || parent === '' || parent === id) return
     const bucket = children.get(parent) ?? new Set<string>()
     bucket.add(id)
     children.set(parent, bucket)
+    parents.get(id)?.add(parent)
   }
   for (const header of headers.values()) link(header.id, header.parentSession)
   for (const handle of live.values()) link(handle.id, handle.header?.parentSession ?? handle.parentSession)
@@ -115,6 +125,9 @@ export async function readUsageTree(
       queue.push(id)
     }
   }
+  // Publish membership before any asynchronous log read, so events arriving
+  // during that read can invalidate the right root, including bad descendants.
+  onCatalog?.({ parents, members: seen })
   const root = await readSession(persistence, rootId, headers.get(rootId), live.get(rootId), signal)
   const logs: Array<UsageSessionLog | undefined> = new Array(ids.length)
   const issues: Array<SessionUsageReadIssue | undefined> = new Array(ids.length)

@@ -111,7 +111,7 @@ test('alpha snapshot listing and 500-event pages win over inspect and always clo
     async open(id, access, options) {
       assert.equal(id, 'root'); assert.equal(access, 'read'); assert.equal(options.signal, controller.signal)
       return { inheritedEventCount: 2,
-        async read(offset, length) { offsets.push(offset); assert.equal(length, 500); return { events: log.slice(offset, offset + length) } },
+        async read(offset, length, options) { offsets.push(offset); assert.equal(length, 500); assert.equal(options.signal, controller.signal); return { events: log.slice(offset, offset + length) } },
         async close() { calls.push('close') },
       }
     },

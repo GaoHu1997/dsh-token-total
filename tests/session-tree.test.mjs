@@ -139,3 +139,52 @@ test('a descendant AbortError is never disguised as incomplete accounting', asyn
   }
   await assert.rejects(readUsageTree(persistence, undefined, 'root'), { name: 'AbortError' })
 })
+
+test('catalog dependencies publish before log reads and include unreadable descendants and their children', async () => {
+  let catalog
+  const reads = []
+  const persistence = {
+    list: async () => [
+      { id: 'root' }, { id: 'bad', parentSession: 'root' },
+      { id: 'grandchild', parentSession: 'bad' }, { id: 'unrelated' },
+    ],
+    inspect: async id => {
+      assert.ok(catalog, 'membership must be available before the first log opens')
+      reads.push(id)
+      if (id === 'bad') throw namedError('SessionPersistenceCorruptionError')
+      return { events: [message(10)], inheritedEventCount: 0 }
+    },
+  }
+  const result = await readUsageTree(persistence, undefined, 'root', undefined, value => {
+    assert.equal(reads.length, 0)
+    catalog = value
+  })
+  assert.deepEqual([...catalog.members], ['root', 'bad', 'grandchild'])
+  assert.deepEqual([...catalog.parents.get('bad')], ['root'])
+  assert.deepEqual([...catalog.parents.get('grandchild')], ['bad'])
+  assert.equal(catalog.parents.get('unrelated').size, 0)
+  assert.equal(result.coverage.totalSessions, 3)
+  assert.equal(result.coverage.readableSessions, 2)
+  assert.deepEqual(result.coverage.unreadableSessions, [{ sessionId: 'bad', reason: 'corrupt' }])
+})
+
+test('catalog parents use the same persisted and live edges as both tree APIs', async () => {
+  const headers = [{ id: 'a' }, { id: 'b' }, { id: 'child', parentSession: 'a' }]
+  const persistence = {
+    list: async () => headers,
+    inspect: async () => ({ events: [message(10)], inheritedEventCount: 0 }),
+  }
+  const child = { id: 'child', header: { id: 'child', parentSession: 'b' }, inheritedEventCount: 0, snapshotEvents: () => [message(7)] }
+  const sessions = { list: () => [child], get: id => id === 'child' ? child : undefined }
+  for (const rootId of ['a', 'b']) {
+    let catalog
+    const logs = await readUsageTree(persistence, sessions, rootId, undefined, value => { catalog = value })
+    assert.deepEqual([...catalog.parents.get('child')], ['a', 'b'])
+    assert.deepEqual([...catalog.members], [rootId, 'child'])
+    assert.equal(logs.descendants.length, 1)
+    const tree = await new SessionUsageService().tree(persistence, sessions, rootId)
+    const detail = await buildSessionUsageDetail(persistence, sessions, rootId)
+    assert.deepEqual(tree.total, detail.totals)
+    assert.deepEqual(tree.coverage, detail.coverage)
+  }
+})
