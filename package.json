@@ -65,6 +65,7 @@
     "icon.svg",
     "src",
     "cordis.patch.yml",
+    "CHANGELOG.md",
     "README.md",
     "LICENSE"
   ],
